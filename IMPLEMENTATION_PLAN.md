@@ -760,7 +760,7 @@ Acceptance criteria:
 - Exit codes are covered by tests.
 - `mcd init`, `mcd pack`, and `mcd validate` can create and validate a minimal document.
 
-## Phase 6: Python bindings
+## Phase 6: Python bindings - Completed 2026-05-18
 
 Status:
 
