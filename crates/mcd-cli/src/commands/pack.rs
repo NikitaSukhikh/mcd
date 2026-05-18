@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use mcd_core::package::validate_internal_path;
+use mcd_core::package::{MCD_MIMETYPE, validate_internal_path};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 pub fn run(directory: &Path, output: &Path) -> Result<()> {
@@ -23,11 +23,15 @@ pub fn run(directory: &Path, output: &Path) -> Result<()> {
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let mimetype = directory.join("mimetype");
+    writer.start_file("mimetype", stored)?;
     if mimetype.is_file() {
-        writer.start_file("mimetype", stored)?;
         let mut input = File::open(&mimetype)?;
         std::io::copy(&mut input, &mut writer)?;
         files.retain(|path| path != &mimetype);
+    } else {
+        use std::io::Write;
+        writer.write_all(MCD_MIMETYPE.as_bytes())?;
+        writer.write_all(b"\n")?;
     }
 
     for path in files {

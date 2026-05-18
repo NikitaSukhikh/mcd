@@ -710,7 +710,20 @@ Acceptance criteria:
 - Chart extraction returns exact table-backed data and view metadata.
 - Image extraction returns metadata without embedding large binary assets by default.
 
-## Phase 5: CLI completion
+## Phase 5: CLI completion - Completed 2026-05-18
+
+Status:
+
+- [x] Stable CLI commands implemented for `inspect`, `validate`, `extract`, `pack`, `unpack`, and `init`.
+- [x] Extracted content is emitted to stdout by default.
+- [x] Diagnostics are emitted through stderr by default.
+- [x] Validation failures exit nonzero.
+- [x] `validate --format json` emits stable machine-readable diagnostics.
+- [x] `pack` writes root `mimetype` first and adds it when missing.
+- [x] `unpack` validates archive entries before writing and refuses unsafe paths.
+- [x] `extract --images` emits image metadata and asset references without binary blobs.
+- [x] `extract --charts` emits chart placements with source table IDs, view IDs, and typed source rows.
+- [x] CLI integration tests cover fixtures, JSON diagnostic shape, exit codes, and `init`/`pack`/`validate`.
 
 Implement stable CLI behavior:
 

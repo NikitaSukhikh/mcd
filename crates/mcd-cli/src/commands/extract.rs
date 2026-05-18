@@ -18,6 +18,19 @@ pub fn run(
     images: bool,
     charts: bool,
 ) -> Result<()> {
+    let modes = [json, markdown, tables, images, charts]
+        .into_iter()
+        .filter(|enabled| *enabled)
+        .count();
+    if modes != 1 {
+        bail!(
+            "choose exactly one extraction mode: --json, --markdown, --tables, --images, or --charts"
+        );
+    }
+    if expand_tables && !markdown {
+        bail!("--expand-tables can only be used with --markdown");
+    }
+
     let package = McdPackage::open_path(file)?;
 
     if json {
@@ -58,5 +71,5 @@ pub fn run(
         return Ok(());
     }
 
-    bail!("choose one extraction mode: --json, --markdown, --tables, --images, or --charts");
+    Ok(())
 }
