@@ -145,19 +145,25 @@ Deliverables:
 - Add formatting and lint defaults.
 - Add a minimal CI workflow once a remote repository is available.
 
-Core dependencies to start:
+Initial Rust core dependencies to start:
 
 ```toml
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+jsonschema = "*"
 csv = "1"
 zip = "*"
 comrak = "*"
 thiserror = "1"
 indexmap = { version = "*", features = ["serde"] }
+sha2 = "*"
 rust_decimal = { version = "*", features = ["serde"] }
 time = { version = "*", features = ["serde", "parsing", "formatting"] }
 camino = "*"
+
+[dev-dependencies]
+insta = "*"
+proptest = "*"
 ```
 
 CLI dependencies:
@@ -173,6 +179,7 @@ Acceptance criteria:
 - `cargo test` passes with placeholder crate tests.
 - `mcd --help` runs.
 - Wildcard dependency versions are tracked as temporary and pinned before release.
+- `DEPENDENCIES.md` remains the full project-wide dependency inventory; this phase lists only the dependencies needed to start the Rust parser, validator, CLI, and tests.
 
 ## Phase 1: Package reader and manifest parser
 
