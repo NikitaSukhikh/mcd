@@ -38,7 +38,7 @@ The first public alpha should include:
 - Structured diagnostics.
 - CLI commands for `inspect`, `validate`, `extract`, `pack`, `unpack`, and `init`.
 - Python bindings exposing the core parser.
-- JSON schemas for manifest, table schema, table view, image metadata, styles, and page map.
+- JSON schemas for manifest, table schema, table view, image metadata, generated renderings, styles, and page map.
 - Minimal, table-backed, image-backed, and chart-backed examples.
 - Valid, invalid, and security-focused conformance fixtures.
 
@@ -158,6 +158,7 @@ mcd/
     table.schema.json
     table-view.schema.json
     image.schema.json
+    rendering.schema.json
     styles.schema.json
     page-map.schema.json
 
@@ -202,6 +203,7 @@ mcd/
           revenue.chart.view.json
         rendered/
           revenue-chart.svg
+          revenue-chart.rendering.json
 
   tests/
     fixtures/
@@ -247,6 +249,8 @@ sha2 = "*"
 rust_decimal = { version = "*", features = ["serde"] }
 time = { version = "*", features = ["serde", "parsing", "formatting"] }
 camino = "*"
+mime_guess = "*"
+roxmltree = "*"
 
 [dev-dependencies]
 insta = "*"
@@ -414,6 +418,7 @@ Implement:
 - CSV loading from manifest-declared paths.
 - JSON schema file parsing for MCD table schemas.
 - JSON table view parsing.
+- JSON chart view parsing as a constrained table view form.
 - Typed value coercion.
 - Cross-file validation between manifest, Markdown anchors, CSV, schemas, and views.
 
@@ -443,6 +448,55 @@ Validation rules:
 - Enum values are members of the declared enum.
 - View columns reference schema columns.
 - View IDs referenced by anchors exist when declared.
+- Chart view IDs referenced by `display: chart` anchors exist.
+- Chart view `table` matches the anchor's table.
+- Chart axis, series, grouping, and mark-label columns reference schema columns.
+- Chart columns use compatible schema types.
+- Chart numeric encodings use `integer` or `decimal` columns.
+- Chart temporal encodings use `date`, `datetime`, or `time` columns.
+- Chart labels, formatting, currency, unit, and percent declarations are consistent with the table schema and view.
+- Rendered chart assets, when declared, are marked as generated renderings and identify their source table and view.
+
+Supported alpha chart view subset:
+
+```text
+bar
+line
+area
+scatter
+```
+
+Chart view example:
+
+```json
+{
+  "id": "quarterly-bar-chart",
+  "table": "revenue",
+  "display": "chart",
+  "chart": {
+    "type": "bar",
+    "x": {
+      "column": "quarter",
+      "label": "Quarter"
+    },
+    "y": {
+      "column": "revenue_gbp",
+      "label": "Revenue",
+      "format": "currency",
+      "currency": "GBP"
+    },
+    "markLabels": {
+      "show": true,
+      "format": "currency",
+      "currency": "GBP"
+    }
+  },
+  "style": {
+    "width": "160mm",
+    "height": "90mm"
+  }
+}
+```
 
 CLI:
 
@@ -459,6 +513,85 @@ Acceptance criteria:
 - Bad decimal, date, datetime, time, boolean, and enum fixtures fail.
 - Unresolved table anchor fixture fails.
 - Unknown view-column fixture fails.
+- Unknown chart-column fixture fails.
+- Chart view with incompatible column types fails.
+- Chart anchor referencing a non-chart view fails.
+
+## Phase 3A: Images and visual asset validation
+
+Implement:
+
+- `mcd_core::assets`.
+- `mcd_core::images`.
+- Asset entries in the manifest.
+- Image metadata loading from `images/*.image.json`.
+- Image directive resolution from Markdown anchors to image metadata and assets.
+- Media type detection and declared media type validation.
+- Hash validation for referenced image assets.
+- Intrinsic size metadata validation when declared.
+- SVG safety validation for scripts, event handlers, active behavior, and external resource references.
+
+Image metadata example:
+
+```json
+{
+  "id": "process-diagram",
+  "asset": "assets/process-diagram.svg",
+  "mediaType": "image/svg+xml",
+  "role": "diagram",
+  "caption": "Facility layout showing intake, processing, quality control, and dispatch.",
+  "alt": "Diagram of the facility workflow from intake to dispatch.",
+  "intrinsicSize": {
+    "width": 1200,
+    "height": 800,
+    "unit": "px"
+  },
+  "hash": "sha256:..."
+}
+```
+
+Supported image roles:
+
+```text
+decorative
+informative
+diagram
+photo
+logo
+rendered-table-prohibited
+rendered-text-prohibited
+```
+
+Validation rules:
+
+- Manifest image IDs are unique.
+- Every image anchor resolves to a declared image ID or asset-backed image metadata object.
+- Every image metadata object references an existing asset.
+- Every image asset is inside `assets/` or another manifest-declared asset directory.
+- Informative, diagram, photo, and logo images require non-empty `alt`.
+- Informative and diagram images require a caption.
+- Decorative images must have empty `alt` unless explicitly overridden by accessibility metadata.
+- `rendered-table-prohibited` and `rendered-text-prohibited` roles are invalid in MCD-Strict packages.
+- If metadata declares that an image contains meaningful text, numbers, or table-like data, the metadata must link to canonical Markdown or table references.
+- SVG assets must not contain scripts, event handler attributes, active animation behavior, external network references, or embedded foreign content.
+- Raster image formats are allowed for photos and visual evidence, but not as canonical sources for tables or numbers.
+
+CLI:
+
+```bash
+mcd validate examples/visual-report/visual-report.mcd
+mcd extract examples/visual-report/visual-report.mcd --json
+```
+
+Acceptance criteria:
+
+- Valid visual example passes validation.
+- Missing image asset fixture fails.
+- Missing informative image alt text fixture fails.
+- Decorative image with required text alternative fixture behavior is covered.
+- SVG script fixture fails.
+- External SVG resource fixture fails.
+- Image-only table fixture fails under MCD-Strict.
 
 ## Phase 4: Exports
 
@@ -469,6 +602,9 @@ Implement:
 - Canonical JSON document stream export.
 - Original Markdown export.
 - Expanded Markdown export with resolved table views.
+- Expanded Markdown export for chart placements as source-data tables plus chart metadata.
+- Image metadata export.
+- Chart metadata export with exact source table and view references.
 - Table extraction export.
 - Schema summary export.
 - Agent context JSON export.
@@ -481,6 +617,20 @@ Expanded Markdown table formatting should use:
 - Currency, percent, number, date, datetime, and string formatting.
 - Alignment markers for Markdown table columns.
 
+Chart export rules:
+
+- `display: chart` placements remain table-backed in JSON.
+- Expanded Markdown may include the chart caption followed by the exact source data as a Markdown table.
+- Agent context must expose `table_id`, `view_id`, chart encodings, style metadata, and source layout references when available.
+- Agents must never need to infer chart values from pixels.
+
+Image export rules:
+
+- Expanded Markdown includes image caption and alt text.
+- JSON export includes image role, media type, intrinsic size, hash, and asset path.
+- Agent context marks decorative images as non-semantic.
+- Agent context includes canonical Markdown/table references for meaningful image content when declared.
+
 CLI:
 
 ```bash
@@ -488,6 +638,8 @@ mcd extract report.mcd --json
 mcd extract report.mcd --markdown
 mcd extract report.mcd --markdown --expand-tables
 mcd extract report.mcd --tables
+mcd extract report.mcd --images
+mcd extract report.mcd --charts
 ```
 
 Acceptance criteria:
@@ -496,6 +648,8 @@ Acceptance criteria:
 - No generated `llm.md` is written into the package.
 - Snapshot tests cover JSON and expanded Markdown output.
 - Output ordering is deterministic.
+- Chart extraction returns exact table-backed data and view metadata.
+- Image extraction returns metadata without embedding large binary assets by default.
 
 ## Phase 5: CLI completion
 
@@ -509,6 +663,8 @@ mcd extract <file.mcd> --json
 mcd extract <file.mcd> --markdown
 mcd extract <file.mcd> --markdown --expand-tables
 mcd extract <file.mcd> --tables
+mcd extract <file.mcd> --images
+mcd extract <file.mcd> --charts
 mcd pack <directory> --output <file.mcd>
 mcd unpack <file.mcd> --output <directory>
 mcd init <directory>
@@ -522,6 +678,8 @@ Rules:
 - `--format json` emits stable machine-readable diagnostics.
 - `pack` writes `mimetype` in the correct root position if possible.
 - `unpack` refuses unsafe archive entries.
+- `extract --images` emits image metadata and asset references, not binary blobs.
+- `extract --charts` emits chart placements with their source table IDs, view IDs, and typed source rows.
 
 Acceptance criteria:
 
@@ -545,6 +703,8 @@ doc = mcd.open("report.mcd")
 validation = doc.validate()
 blocks = doc.blocks()
 table = doc.table("revenue")
+chart = doc.chart("revenue-chart")
+image = doc.image("process-diagram")
 markdown = doc.markdown(expand_tables=True)
 context = doc.to_agent_context(include_tables=True, include_layout=False)
 ```
@@ -557,8 +717,30 @@ Block
 Table
 TableSchema
 TableView
+Chart
+Image
 ValidationResult
 Diagnostic
+```
+
+Chart API:
+
+```python
+chart.table_id
+chart.view_id
+chart.dataframe()
+chart.to_markdown_table()
+chart.layout()
+```
+
+Image API:
+
+```python
+image.asset_path
+image.role
+image.alt
+image.caption
+image.intrinsic_size
 ```
 
 Rules:
@@ -572,7 +754,9 @@ Acceptance criteria:
 
 - `maturin develop` works locally.
 - `pytest` covers open, validate, blocks, tables, expanded Markdown, and exceptions.
+- `pytest` covers image metadata access and chart source-data extraction.
 - Optional pandas extra can convert a table to a DataFrame when pandas is installed.
+- Optional pandas extra can convert chart source data to a DataFrame when pandas is installed.
 
 ## Phase 7: JSON schemas and conformance fixtures
 
@@ -581,9 +765,20 @@ Implement:
 - `schemas/manifest.schema.json`.
 - `schemas/table.schema.json`.
 - `schemas/table-view.schema.json`.
+- `schemas/image.schema.json`.
+- `schemas/rendering.schema.json`.
 - `schemas/styles.schema.json`.
 - `schemas/page-map.schema.json`.
 - Conformance fixture set.
+
+Schema rules:
+
+- `table-view.schema.json` supports both table views and constrained chart views.
+- Chart views use `display: chart` and a required `chart` object.
+- Table views use `display: table` or omit `display`.
+- `image.schema.json` validates role, alt text, caption, media type, intrinsic size, hash, and canonical source references for meaningful visual content.
+- `rendering.schema.json` validates generated asset provenance, source table/view references, media type, and hash.
+- Manifest schema supports `conformance` claims including `MCD-Core`, `MCD-Images`, `MCD-Charts`, and `MCD-Strict`.
 
 Minimum fixtures:
 
@@ -592,11 +787,20 @@ valid-minimal.mcd
 valid-table.mcd
 valid-two-tables.mcd
 valid-reused-table.mcd
+valid-image.mcd
+valid-chart.mcd
+valid-image-and-chart.mcd
 invalid-missing-manifest.mcd
 invalid-bad-mimetype.mcd
 invalid-unresolved-table.mcd
 invalid-csv-header-mismatch.mcd
 invalid-nonnullable-empty-cell.mcd
+invalid-unresolved-image.mcd
+invalid-image-missing-alt.mcd
+invalid-svg-script.mcd
+invalid-image-only-table-strict.mcd
+invalid-chart-unknown-column.mcd
+invalid-chart-bad-type.mcd
 invalid-path-traversal.mcd
 ```
 
@@ -613,6 +817,8 @@ Implement after parser and validator stabilize:
 - `crates/mcd-render`.
 - Semantic HTML output from the canonical document stream.
 - CSS generation from a small subset of `layout/styles.json`.
+- HTML image rendering from validated image metadata.
+- HTML chart rendering from typed table data and chart view JSON.
 - CLI support:
 
 ```bash
@@ -625,11 +831,17 @@ Rules:
 - `mcd-core` does not depend on renderer.
 - HTML contains stable source IDs for future page-map work.
 - Meaningful text and tables still originate from Markdown and CSV.
+- Rendered charts are generated from table values and chart view rules.
+- Generated chart SVG can be written to `rendered/`, but remains non-canonical.
+- Rendered images must use package assets and must not load remote resources.
 
 Acceptance criteria:
 
 - Valid table example renders to standalone HTML.
+- Valid image example renders accessible image markup.
+- Valid chart example renders a chart generated from CSV data.
 - Table views affect visible column labels, ordering, formatting, and alignment.
+- Chart views affect chart type, axes, labels, formatting, and colors.
 - Renderer tests compare stable HTML snapshots.
 
 ## Phase 9: PDF export and page map
@@ -639,6 +851,8 @@ Implement only after HTML rendering is useful:
 - HTML-to-PDF export through an external renderer or browser-based path.
 - Optional `layout/page-map.json` generation.
 - Source-to-render object IDs.
+- Page-map entries for image and chart placements.
+- Optional generated chart asset integrity checks.
 - CLI support:
 
 ```bash
@@ -649,8 +863,11 @@ mcd render report.mcd --html --page-map --output report.html
 Acceptance criteria:
 
 - Rendered tables map back to table anchors.
+- Rendered charts map back to table anchors with `display: chart`.
+- Rendered images map back to image anchors and image metadata.
 - Rendered text objects map back to Markdown source blocks.
 - Page-map source references validate against source objects.
+- Chart page-map entries include table ID, view ID, bounding box, and rendered asset when present.
 - MCD-Rendered validation recognizes layout and page-map files.
 
 ## Phase 10: WASM and TypeScript
@@ -709,6 +926,9 @@ table.*
 csv.*
 schema.*
 view.*
+chart.*
+image.*
+asset.*
 layout.*
 page_map.*
 render.*
@@ -734,6 +954,8 @@ Recommended test categories:
 - Security tests for malicious archives.
 - Fixture tests for all conformance examples.
 - Property tests for path normalization and CSV type coercion edge cases.
+- Image validation tests for roles, alt text, captions, hashes, media types, and SVG safety.
+- Chart validation tests for source tables, view references, encoding columns, type compatibility, and rendered-asset provenance.
 
 Python checks:
 
@@ -761,6 +983,7 @@ Before the first alpha release:
 - Docs/spec license notice is present.
 - Schemas, examples, and fixtures have CC0-1.0 notices.
 - CLI validates all conformance fixtures.
+- CLI validates MCD-Images, MCD-Charts, and MCD-Strict visual fixtures.
 - Python package builds on Windows, macOS, and Linux.
 - README has install, validate, extract, and Python usage examples.
 - Known limitations are documented.
@@ -773,13 +996,15 @@ Before the first alpha release:
 4. Create minimal valid and invalid fixtures.
 5. Implement Markdown block parsing and table directive extraction.
 6. Implement table schema parsing and CSV type validation.
-7. Implement document stream and JSON export.
-8. Implement expanded Markdown export.
-9. Complete CLI validate/extract/init/pack/unpack.
-10. Add Python bindings.
-11. Add JSON schemas and broaden conformance fixtures.
-12. Add HTML renderer.
-13. Add PDF/page-map work.
-14. Add WASM/TypeScript wrapper.
+7. Implement chart view validation as table-backed views.
+8. Implement image directive parsing, image metadata, and visual asset validation.
+9. Implement document stream and JSON export.
+10. Implement expanded Markdown export.
+11. Complete CLI validate/extract/init/pack/unpack.
+12. Add Python bindings.
+13. Add JSON schemas and broaden conformance fixtures.
+14. Add HTML renderer with table, image, and chart output.
+15. Add PDF/page-map work.
+16. Add WASM/TypeScript wrapper.
 
 The parser and validator should be considered the product core. Rendering, PDF compatibility, signatures, and browser support should build on top only after MCD-Core behavior is stable.
