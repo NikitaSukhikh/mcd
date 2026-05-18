@@ -241,11 +241,7 @@ fn render_block(block: &DocumentBlock, context: &RenderContext<'_>) -> mcd_core:
                 .collect::<String>()
                 + &render_block_annotation_markers(refs, context.annotations)
         )),
-        DocumentBlock::MathBlock { id, text, source } => Ok(format!(
-            "<pre{} class=\"mcd-math\"><code>{}</code></pre>",
-            source_attrs(id, *source),
-            escape_html(text.trim())
-        )),
+        DocumentBlock::MathBlock { id, text, source } => render_math_block(id, text, *source),
         DocumentBlock::TableRef {
             id,
             placement,
@@ -309,6 +305,38 @@ fn render_table_or_chart(
             annotations,
             styles,
         ),
+    }
+}
+
+fn render_math_block(id: &str, text: &str, source: Option<SourceSpan>) -> mcd_core::Result<String> {
+    let math = text.trim();
+    let attrs = source_attrs(id, source);
+    match render_mathml(math) {
+        Ok(mathml) => Ok(format!(
+            "<div{} class=\"mcd-math\" data-mcd-math=\"display\">{}</div>",
+            attrs, mathml
+        )),
+        Err(err) => Ok(format!(
+            "<pre{} class=\"mcd-math mcd-math-fallback\" data-mcd-math=\"display\" data-mcd-math-error=\"{}\"><code>{}</code></pre>",
+            attrs,
+            escape_attr(&err.to_string()),
+            escape_html(math)
+        )),
+    }
+}
+
+fn render_mathml(math: &str) -> Result<String, String> {
+    let opts = katex::Opts::builder()
+        .display_mode(true)
+        .output_type(katex::OutputType::Mathml)
+        .throw_on_error(false)
+        .build()
+        .expect("KaTeX options are fully specified");
+    let mathml = katex::render_with_opts(math, &opts).map_err(|err| err.to_string())?;
+    if mathml.contains("katex-error") {
+        Err("invalid LaTeX math".to_owned())
+    } else {
+        Ok(mathml)
     }
 }
 
@@ -949,7 +977,8 @@ fn render_annotation_marker(id: &str, annotations: &RenderAnnotationIndex) -> St
         return String::new();
     };
     format!(
-        "<sup class=\"mcd-annotation-marker\"><a href=\"#mcd-annotation-{}\" aria-label=\"Annotation {}\">{}</a></sup>",
+        "<sup id=\"mcd-annotation-ref-{}\" class=\"mcd-annotation-marker\"><a href=\"#mcd-annotation-{}\" aria-label=\"Annotation {}\">{}</a></sup>",
+        escape_attr(id),
         escape_attr(id),
         annotation.number,
         annotation.number
@@ -969,8 +998,10 @@ fn render_annotation_endnotes(annotations: &RenderAnnotationIndex) -> String {
             continue;
         };
         html.push_str(&format!(
-            "<li id=\"mcd-annotation-{}\"><span class=\"mcd-annotation-kind\">{}</span>: {}</li>\n",
+            "<li id=\"mcd-annotation-{}\"><a class=\"mcd-annotation-backlink\" href=\"#mcd-annotation-ref-{}\" aria-label=\"Back to annotation {}\"><span class=\"mcd-annotation-kind\">{}</span>: {}</a></li>\n",
             escape_attr(id),
+            escape_attr(id),
+            annotation.number,
             escape_html(&format!("{:?}", annotation.metadata.kind).to_ascii_lowercase()),
             escape_html(&annotation.metadata.body)
         ));
@@ -1130,6 +1161,22 @@ figcaption {
 font-weight: 600;
 margin-bottom: 8px;
 }
+.mcd-math {
+margin: 24px 0;
+overflow-x: auto;
+text-align: center;
+}
+.mcd-math math {
+font-size: 1.12em;
+}
+.mcd-math-fallback {
+background: #f9fafb;
+border: 1px solid var(--mcd-color-border);
+border-radius: 6px;
+padding: 12px 14px;
+text-align: left;
+white-space: pre-wrap;
+}
 .mcd-table-figure table {
 width: 100%;
 border-collapse: collapse;
@@ -1187,6 +1234,14 @@ margin-bottom: 12px;
 }
 .mcd-annotations li {
 margin: 6px 0;
+}
+.mcd-annotation-backlink {
+color: inherit;
+text-decoration: none;
+}
+.mcd-annotation-backlink:hover,
+.mcd-annotation-backlink:focus {
+text-decoration: underline;
 }
 .mcd-annotation-kind {
 font-weight: 600;
@@ -1434,6 +1489,48 @@ mod tests {
     }
 
     #[test]
+    fn renders_math_blocks_as_mathml() {
+        let package = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", mcd_core::package::MCD_MIMETYPE),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+            ),
+            (
+                "content/main.md",
+                "# Math\n\n```math\nS_1 = \\frac{42 + 55}{2} = 48.5\n```\n",
+            ),
+        ]))
+        .expect("package opens");
+
+        let html = render_html(&package).expect("html renders");
+
+        assert!(html.contains("class=\"mcd-math\" data-mcd-math=\"display\""));
+        assert!(html.contains("<math"));
+        assert!(html.contains("<mfrac>"));
+        assert!(!html.contains("class=\"mcd-math mcd-math-fallback\""));
+    }
+
+    #[test]
+    fn falls_back_to_escaped_source_for_invalid_math() {
+        let package = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", mcd_core::package::MCD_MIMETYPE),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+            ),
+            ("content/main.md", "# Math\n\n```math\n\\\n```\n"),
+        ]))
+        .expect("package opens");
+
+        let html = render_html(&package).expect("html renders");
+
+        assert!(html.contains("mcd-math-fallback"));
+        assert!(html.contains("data-mcd-math-error="));
+        assert!(html.contains("<code>\\</code>"));
+    }
+
+    #[test]
     fn renders_annotation_markers_and_endnotes() {
         let package = McdPackage::from_bytes(&zip_bytes(&[
             ("mimetype", mcd_core::package::MCD_MIMETYPE),
@@ -1473,8 +1570,10 @@ mod tests {
 
         let html = render_html(&package).expect("html renders");
 
-        assert!(html.contains("Revenue<sup class=\"mcd-annotation-marker\""));
+        assert!(html.contains("Revenue<sup id=\"mcd-annotation-ref-review-intro\""));
         assert!(html.contains("href=\"#mcd-annotation-review-intro\""));
+        assert!(html.contains("href=\"#mcd-annotation-ref-review-intro\""));
+        assert!(html.contains("class=\"mcd-annotation-backlink\""));
         assert!(html.contains("<section class=\"mcd-annotations\""));
         assert!(html.contains("Confirm this wording."));
         assert!(html.contains("Check table source."));

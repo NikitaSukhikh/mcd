@@ -8,6 +8,7 @@ description = "HTML renderer for Markdown CSV Document packages."
 [dependencies]
 base64 = "0.22"
 indexmap = { version = "*", features = ["serde"] }
+katex = { version = "0.4.6", default-features = false, features = ["duktape"] }
 mcd-core = { path = "../mcd-core" }
 serde_json = "1"
 
