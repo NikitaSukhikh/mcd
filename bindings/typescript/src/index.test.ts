@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-import { McdParserError, openMcd } from "./index.js";
+import { McdParserError, openMcd, pdfToMcd } from "./index.js";
 
 const fixtureRoot = new URL("../../../tests/fixtures/conformance/", import.meta.url);
 
@@ -55,4 +55,38 @@ describe("@mcd/parser", () => {
       );
     }
   });
+
+  it("converts PDF bytes to MCD bytes", async () => {
+    const bytes = await pdfToMcd(minimalPdf("Hello from PDF"));
+    const doc = await openMcd(bytes);
+
+    expect(doc.validate()).toEqual({ valid: true, diagnostics: [] });
+    expect(doc.markdown()).toContain("Hello from PDF");
+  });
 });
+
+function minimalPdf(text: string): Uint8Array {
+  const escaped = text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  const content = `BT /F1 24 Tf 100 700 Td (${escaped}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  offsets.forEach((offset) => {
+    pdf += `${offset.toString().padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(pdf);
+}

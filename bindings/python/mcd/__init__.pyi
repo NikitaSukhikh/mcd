@@ -113,3 +113,13 @@ class Document:
 
 
 def open(path: str | Path) -> Document: ...
+def convert_pdf(
+    input: str | Path,
+    output: str | Path,
+    title: str | None = None,
+) -> Document: ...
+def pdf_to_mcd_bytes(
+    pdf: bytes,
+    title: str | None = None,
+    source_filename: str | None = None,
+) -> bytes: ...

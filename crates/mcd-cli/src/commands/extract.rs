@@ -15,19 +15,33 @@ pub enum ExportMode {
     Annotations,
 }
 
-pub fn run(
-    file: &Path,
-    export: Option<ExportMode>,
-    json: bool,
-    markdown: bool,
-    expand_tables: bool,
-    tables: bool,
-    images: bool,
-    annotations: bool,
-    page: Option<&str>,
-    line: Option<usize>,
-    charts: bool,
-) -> Result<()> {
+pub struct ExtractOptions<'a> {
+    pub(crate) export: Option<ExportMode>,
+    pub(crate) json: bool,
+    pub(crate) markdown: bool,
+    pub(crate) expand_tables: bool,
+    pub(crate) tables: bool,
+    pub(crate) images: bool,
+    pub(crate) annotations: bool,
+    pub(crate) page: Option<&'a str>,
+    pub(crate) line: Option<usize>,
+    pub(crate) charts: bool,
+}
+
+pub fn run(file: &Path, options: ExtractOptions<'_>) -> Result<()> {
+    let ExtractOptions {
+        export,
+        json,
+        markdown,
+        expand_tables,
+        tables,
+        images,
+        annotations,
+        page,
+        line,
+        charts,
+    } = options;
+
     let export_annotations = matches!(export, Some(ExportMode::Annotations));
     let annotations = annotations || export_annotations;
 

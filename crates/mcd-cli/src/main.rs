@@ -41,6 +41,17 @@ enum Command {
         #[arg(long)]
         id: Option<String>,
     },
+    /// Convert a PDF into a minimal MCD package.
+    ConvertPdf {
+        /// PDF file to convert.
+        file: PathBuf,
+        /// Output MCD package path.
+        #[arg(long)]
+        output: PathBuf,
+        /// Optional document title.
+        #[arg(long)]
+        title: Option<String>,
+    },
     /// Validate an MCD package.
     Validate {
         /// Package file to validate.
@@ -144,6 +155,11 @@ fn main() -> Result<()> {
             line,
             id,
         } => commands::add_annotation::run(&file, &text, &page, line, id.as_deref()),
+        Command::ConvertPdf {
+            file,
+            output,
+            title,
+        } => commands::convert_pdf::run(&file, &output, title.as_deref()),
         Command::Validate { file, format } => commands::validate::run(&file, format),
         Command::Extract {
             file,
@@ -159,18 +175,20 @@ fn main() -> Result<()> {
             charts,
         } => commands::extract::run(
             &file,
-            export.map(|mode| match mode {
-                ExportMode::Annotations => commands::extract::ExportMode::Annotations,
-            }),
-            json,
-            markdown,
-            expand_tables,
-            tables,
-            images,
-            annotations,
-            page.as_deref(),
-            line,
-            charts,
+            commands::extract::ExtractOptions {
+                export: export.map(|mode| match mode {
+                    ExportMode::Annotations => commands::extract::ExportMode::Annotations,
+                }),
+                json,
+                markdown,
+                expand_tables,
+                tables,
+                images,
+                annotations,
+                page: page.as_deref(),
+                line,
+                charts,
+            },
         ),
         Command::Render {
             file,

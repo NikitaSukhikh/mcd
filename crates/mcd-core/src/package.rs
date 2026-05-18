@@ -266,6 +266,7 @@ fn invalid_path(path: &str) -> McdError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use std::io::Write;
     use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
@@ -400,6 +401,25 @@ mod tests {
             err.diagnostic().map(|d| d.code.as_str()),
             Some("security.path.duplicate")
         );
+    }
+
+    proptest! {
+        #[test]
+        fn validates_generated_safe_relative_paths(segments in prop::collection::vec("[A-Za-z0-9_-]{1,12}", 1..5)) {
+            let path = segments.join("/");
+            let normalized = validate_internal_path(&path).expect("safe relative path should validate");
+            prop_assert_eq!(normalized, path);
+        }
+
+        #[test]
+        fn rejects_generated_traversal_paths(prefix in "[A-Za-z0-9_-]{1,12}", suffix in "[A-Za-z0-9_-]{1,12}") {
+            let path = format!("{prefix}/../{suffix}");
+            let err = validate_internal_path(&path).expect_err("traversal path should fail");
+            prop_assert_eq!(
+                err.diagnostic().map(|diagnostic| diagnostic.code.as_str()),
+                Some("security.path.invalid")
+            );
+        }
     }
 
     fn zip_bytes(entries: &[(&str, &str)]) -> Vec<u8> {

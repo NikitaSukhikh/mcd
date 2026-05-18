@@ -105,6 +105,26 @@ def test_annotation_metadata_access(tmp_path: Path) -> None:
     assert doc.annotation("review-intro").labels == ["review"]
 
 
+def test_pdf_conversion(tmp_path: Path) -> None:
+    pdf = tmp_path / "source.pdf"
+    package = tmp_path / "source.mcd"
+    pdf.write_bytes(minimal_pdf("Hello from PDF"))
+
+    doc = mcd.convert_pdf(pdf, package, title="Imported PDF")
+
+    assert doc.validate().valid
+    assert "# Imported PDF" in doc.markdown()
+    assert "Hello from PDF" in doc.markdown()
+    converted_bytes = mcd.pdf_to_mcd_bytes(
+        minimal_pdf("Bytes PDF"),
+        title="Bytes Import",
+        source_filename="bytes.pdf",
+    )
+    package_from_bytes = tmp_path / "bytes.mcd"
+    package_from_bytes.write_bytes(converted_bytes)
+    assert "Bytes PDF" in mcd.open(package_from_bytes).markdown()
+
+
 def test_validation_failure_returns_diagnostic(tmp_path: Path) -> None:
     package = tmp_path / "missing-manifest.mcd"
     with zipfile.ZipFile(package, "w") as archive:
@@ -141,3 +161,30 @@ def test_pandas_dataframe_optional() -> None:
     chart_frame = doc.chart("revenue-chart").dataframe()
     assert list(chart_frame.columns) == ["quarter", "revenue_gbp"]
     assert chart_frame.iloc[0]["revenue_gbp"] == "125000"
+
+
+def minimal_pdf(text: str) -> bytes:
+    escaped = text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+    content = f"BT /F1 24 Tf 100 700 Td ({escaped}) Tj ET"
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+    ]
+    pdf = "%PDF-1.4\n"
+    offsets: list[int] = []
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf.encode()))
+        pdf += f"{index} 0 obj\n{obj}\nendobj\n"
+    xref_offset = len(pdf.encode())
+    pdf += f"xref\n0 {len(objects) + 1}\n"
+    pdf += "0000000000 65535 f \n"
+    for offset in offsets:
+        pdf += f"{offset:010} 00000 n \n"
+    pdf += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n"
+    )
+    return pdf.encode()

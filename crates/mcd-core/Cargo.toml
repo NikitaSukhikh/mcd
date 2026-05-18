@@ -20,6 +20,9 @@ thiserror = "1"
 time = { version = "*", features = ["serde", "parsing", "formatting", "macros"] }
 zip = { version = "*", default-features = false, features = ["deflate"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pdf-extract = "0.10"
+
 [dev-dependencies]
 insta = "*"
 jsonschema = "*"

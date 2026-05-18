@@ -300,6 +300,7 @@ fn cell_type_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn column(value_type: ColumnType, nullable: bool) -> TableColumnSchema {
         TableColumnSchema {
@@ -401,6 +402,20 @@ mod tests {
         for (raw, column, code) in cases {
             let err = coerce_cell(raw, &column, "t.csv", 2).expect_err("invalid");
             assert_eq!(err.diagnostic().map(|d| d.code.as_str()), Some(code));
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn coerces_generated_integers(raw in any::<i64>()) {
+            let value = coerce_cell(
+                &raw.to_string(),
+                &column(ColumnType::Integer, false),
+                "t.csv",
+                2,
+            )
+            .expect("integer");
+            prop_assert_eq!(value, TypedValue::Integer(raw));
         }
     }
 }

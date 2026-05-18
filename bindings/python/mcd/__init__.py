@@ -11,7 +11,9 @@ from ._native import (
     TableSchema,
     TableView,
     ValidationResult,
+    convert_pdf,
     open,
+    pdf_to_mcd_bytes,
 )
 
 __all__ = [
@@ -25,5 +27,7 @@ __all__ = [
     "TableSchema",
     "TableView",
     "ValidationResult",
+    "convert_pdf",
     "open",
+    "pdf_to_mcd_bytes",
 ]

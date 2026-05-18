@@ -8,12 +8,22 @@ const packageDir = resolve(scriptDir, "..");
 const repoRoot = resolve(packageDir, "..", "..");
 const target = "wasm32-unknown-unknown";
 const profile = "release";
+const rustflags = [
+  process.env.RUSTFLAGS,
+  '--cfg getrandom_backend="wasm_js"',
+]
+  .filter(Boolean)
+  .join(" ");
 
 execFileSync(
   "cargo",
   ["build", "-p", "mcd-wasm", "--target", target, "--release"],
   {
     cwd: repoRoot,
+    env: {
+      ...process.env,
+      RUSTFLAGS: rustflags,
+    },
     stdio: "inherit",
   },
 );

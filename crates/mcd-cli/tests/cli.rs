@@ -302,6 +302,36 @@ fn render_markdown_writes_plain_projection_with_embedded_tables() {
 }
 
 #[test]
+fn convert_pdf_writes_valid_mcd_package() {
+    let root = temp_path("convert-pdf");
+    fs::create_dir_all(&root).expect("temp root");
+    let pdf = root.join("source.pdf");
+    let package = root.join("source.mcd");
+    fs::write(&pdf, minimal_pdf("Hello from a PDF")).expect("pdf");
+
+    let convert = run(mcd()
+        .arg("convert-pdf")
+        .arg(&pdf)
+        .arg("--output")
+        .arg(&package)
+        .arg("--title")
+        .arg("Imported PDF"));
+    assert!(convert.status.success(), "{}", stderr(&convert));
+    assert!(stdout(&convert).is_empty());
+    assert!(stderr(&convert).is_empty());
+
+    let validate = run(mcd().arg("validate").arg(&package));
+    assert!(validate.status.success(), "{}", stderr(&validate));
+
+    let markdown = run(mcd().arg("extract").arg(&package).arg("--markdown"));
+    assert!(markdown.status.success(), "{}", stderr(&markdown));
+    assert!(stdout(&markdown).contains("# Imported PDF"));
+    assert!(stdout(&markdown).contains("Hello from a PDF"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn plain_markdown_renamed_to_mcd_validates_and_renders() {
     let root = temp_path("plain-markdown");
     fs::create_dir_all(&root).expect("temp root");
@@ -439,4 +469,40 @@ fn write_zip(path: &Path, entries: &[(&str, &str)]) {
     }
 
     writer.finish().expect("finish zip");
+}
+
+fn minimal_pdf(text: &str) -> Vec<u8> {
+    let escaped = text
+        .replace('\\', r"\\")
+        .replace('(', r"\(")
+        .replace(')', r"\)");
+    let content = format!("BT /F1 24 Tf 100 700 Td ({escaped}) Tj ET");
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_owned(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        format!("<< /Length {} >>\nstream\n{}\nendstream", content.len(), content),
+    ];
+    let mut bytes = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(bytes.len());
+        bytes.extend_from_slice(format!("{} 0 obj\n{}\nendobj\n", index + 1, object).as_bytes());
+    }
+    let xref_offset = bytes.len();
+    bytes.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    bytes.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in offsets {
+        bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    bytes.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    bytes
 }

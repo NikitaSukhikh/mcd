@@ -237,7 +237,17 @@ mod tests {
             None,
         );
 
-        assert_validation_code(&package, "csv.header.mismatch");
+        let err = validate_package(&package).expect_err("package should be invalid");
+        let diagnostic = err.diagnostic().expect("structured diagnostic");
+        assert_eq!(diagnostic.level, crate::errors::DiagnosticLevel::Error);
+        assert_eq!(diagnostic.code, "csv.header.mismatch");
+        assert!(
+            diagnostic
+                .message
+                .contains("CSV header does not match table schema")
+        );
+        assert_eq!(diagnostic.source.as_deref(), Some("tables/revenue.csv:1"));
+        assert_eq!(diagnostic.related, vec!["tables/revenue.schema.json"]);
     }
 
     #[test]

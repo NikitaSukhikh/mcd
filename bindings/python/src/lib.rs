@@ -12,6 +12,7 @@ use mcd_core::{
         expanded_markdown_export, image_export, original_markdown_export, table_export,
     },
     images::ImageMetadata,
+    pdf::{PdfConversionOptions, pdf_to_mcd_bytes as core_pdf_to_mcd_bytes},
     schema::TableSchema as CoreTableSchema,
     table_view::TableView as CoreTableView,
     tables::{DataTable, TableRow, TypedValue},
@@ -21,7 +22,7 @@ use pyo3::{
     IntoPyObjectExt,
     exceptions::{PyKeyError, PyRuntimeError, PyValueError},
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyBytes, PyDict, PyList},
 };
 use serde_json::{Map, Value};
 
@@ -670,9 +671,57 @@ fn open_package(path: PathBuf) -> PyResult<PyDocument> {
     Ok(PyDocument { path, package })
 }
 
+#[pyfunction]
+#[pyo3(signature = (input, output, title = None))]
+fn convert_pdf(input: PathBuf, output: PathBuf, title: Option<String>) -> PyResult<PyDocument> {
+    let pdf = std::fs::read(&input)
+        .map_err(McdError::from)
+        .map_err(err_to_py)?;
+    let bytes = core_pdf_to_mcd_bytes(
+        &pdf,
+        PdfConversionOptions {
+            title,
+            source_filename: input
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(ToOwned::to_owned),
+        },
+    )
+    .map_err(err_to_py)?;
+    std::fs::write(&output, bytes)
+        .map_err(McdError::from)
+        .map_err(err_to_py)?;
+    let package = McdPackage::open_path(&output).map_err(err_to_py)?;
+    Ok(PyDocument {
+        path: output,
+        package,
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (pdf, title = None, source_filename = None))]
+fn pdf_to_mcd_bytes<'py>(
+    py: Python<'py>,
+    pdf: &[u8],
+    title: Option<String>,
+    source_filename: Option<String>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let bytes = core_pdf_to_mcd_bytes(
+        pdf,
+        PdfConversionOptions {
+            title,
+            source_filename,
+        },
+    )
+    .map_err(err_to_py)?;
+    Ok(PyBytes::new(py, &bytes))
+}
+
 #[pymodule]
 fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(open_package, module)?)?;
+    module.add_function(wrap_pyfunction!(convert_pdf, module)?)?;
+    module.add_function(wrap_pyfunction!(pdf_to_mcd_bytes, module)?)?;
     module.add_class::<PyDocument>()?;
     module.add_class::<PyBlock>()?;
     module.add_class::<PyTable>()?;

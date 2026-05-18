@@ -11,6 +11,7 @@ use mcd_core::{
     document::McdDocument,
     errors::DiagnosticLevel,
     export::{annotation_export, expanded_markdown_export, original_markdown_export},
+    pdf::{PdfConversionOptions, pdf_to_mcd_bytes},
     validate::{ValidationResult, validate_package},
 };
 use serde::Serialize;
@@ -143,6 +144,25 @@ pub unsafe extern "C" fn mcd_markdown(ptr: *const u8, len: usize, expand_tables:
     });
     match markdown {
         Ok(markdown) => set_output(markdown.into_bytes(), 0),
+        Err(err) => set_error_output(&err),
+    }
+}
+
+/// Convert PDF bytes into MCD package bytes.
+///
+/// On success, the output buffer contains binary MCD archive bytes and the
+/// return value is `0`. On failure, the output contains a UTF-8 JSON error
+/// payload and the return value is `1`.
+///
+/// # Safety
+///
+/// `ptr` must point to `len` readable bytes in WASM linear memory for the
+/// duration of this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mcd_pdf_to_mcd(ptr: *const u8, len: usize) -> i32 {
+    let bytes = unsafe { input_bytes(ptr, len) };
+    match pdf_to_mcd_bytes(bytes, PdfConversionOptions::default()) {
+        Ok(bytes) => set_output(bytes, 0),
         Err(err) => set_error_output(&err),
     }
 }

@@ -169,11 +169,18 @@ export async function openMcd(input: BytesLike): Promise<McdDocument> {
   return McdDocument.fromBytes(input);
 }
 
+export async function pdfToMcd(input: BytesLike): Promise<Uint8Array> {
+  return callWasmBytes(await loadWasm(), "mcd_pdf_to_mcd", toBytes(input));
+}
+
 type WasmOperation =
   | "mcd_validate"
   | "mcd_blocks"
   | "mcd_annotations"
-  | "mcd_markdown";
+  | "mcd_markdown"
+  | "mcd_pdf_to_mcd";
+
+type BinaryWasmOperation = "mcd_pdf_to_mcd";
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -185,10 +192,30 @@ interface WasmExports {
   mcd_blocks(ptr: number, len: number): number;
   mcd_annotations(ptr: number, len: number): number;
   mcd_markdown(ptr: number, len: number, expandTables: number): number;
+  mcd_pdf_to_mcd(ptr: number, len: number): number;
 }
 
 interface WasmErrorPayload {
   diagnostic: Diagnostic;
+}
+
+function callWasmBytes(
+  wasm: WasmExports,
+  operation: BinaryWasmOperation,
+  bytes: Uint8Array,
+): Uint8Array {
+  const ptr = wasm.mcd_alloc(bytes.byteLength);
+  try {
+    new Uint8Array(wasm.memory.buffer).set(bytes, ptr);
+    const status = wasm[operation](ptr, bytes.byteLength);
+    const output = readOutputBytes(wasm);
+    if (status !== 0) {
+      throw errorFromPayload(new TextDecoder().decode(output));
+    }
+    return output;
+  } finally {
+    wasm.mcd_free(ptr, bytes.byteLength);
+  }
 }
 
 let wasmPromise: Promise<WasmExports> | undefined;
@@ -225,10 +252,14 @@ function callWasm(
 }
 
 function readOutput(wasm: WasmExports): string {
+  return new TextDecoder().decode(readOutputBytes(wasm));
+}
+
+function readOutputBytes(wasm: WasmExports): Uint8Array {
   const ptr = wasm.mcd_output_ptr();
   const len = wasm.mcd_output_len();
   const bytes = new Uint8Array(wasm.memory.buffer, ptr, len);
-  return new TextDecoder().decode(bytes);
+  return new Uint8Array(bytes);
 }
 
 function errorFromPayload(output: string): McdParserError {
