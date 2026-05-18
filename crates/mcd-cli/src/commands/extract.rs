@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use mcd_core::{
     McdPackage,
     export::{
-        chart_export, expanded_markdown_export, image_export, json_export,
+        annotation_export, chart_export, expanded_markdown_export, image_export, json_export,
         original_markdown_export, table_export,
     },
 };
@@ -16,15 +16,16 @@ pub fn run(
     expand_tables: bool,
     tables: bool,
     images: bool,
+    annotations: bool,
     charts: bool,
 ) -> Result<()> {
-    let modes = [json, markdown, tables, images, charts]
+    let modes = [json, markdown, tables, images, annotations, charts]
         .into_iter()
         .filter(|enabled| *enabled)
         .count();
     if modes != 1 {
         bail!(
-            "choose exactly one extraction mode: --json, --markdown, --tables, --images, or --charts"
+            "choose exactly one extraction mode: --json, --markdown, --tables, --images, --annotations, or --charts"
         );
     }
     if expand_tables && !markdown {
@@ -59,6 +60,14 @@ pub fn run(
         println!(
             "{}",
             serde_json::to_string_pretty(&image_export(&package)?)?
+        );
+        return Ok(());
+    }
+
+    if annotations {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&annotation_export(&package)?)?
         );
         return Ok(());
     }

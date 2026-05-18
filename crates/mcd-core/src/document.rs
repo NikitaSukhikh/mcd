@@ -36,6 +36,9 @@ pub enum DocumentBlock {
         /// Source span when available.
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<SourceSpan>,
+        /// Inline annotation markers in this block.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        annotations: Vec<AnnotationRef>,
     },
     /// Markdown paragraph.
     Paragraph {
@@ -46,6 +49,9 @@ pub enum DocumentBlock {
         /// Source span when available.
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<SourceSpan>,
+        /// Inline annotation markers in this block.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        annotations: Vec<AnnotationRef>,
     },
     /// Markdown list.
     List {
@@ -56,6 +62,9 @@ pub enum DocumentBlock {
         /// Source span when available.
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<SourceSpan>,
+        /// Inline annotation markers in this block.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        annotations: Vec<AnnotationRef>,
     },
     /// Markdown code block.
     CodeBlock {
@@ -69,6 +78,9 @@ pub enum DocumentBlock {
         /// Source span when available.
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<SourceSpan>,
+        /// Inline annotation markers in this block.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        annotations: Vec<AnnotationRef>,
     },
     /// Markdown block quote.
     Quote {
@@ -79,6 +91,9 @@ pub enum DocumentBlock {
         /// Source span when available.
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<SourceSpan>,
+        /// Inline annotation markers in this block.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        annotations: Vec<AnnotationRef>,
     },
     /// Markdown display math block.
     MathBlock {
@@ -127,6 +142,31 @@ impl DocumentBlock {
             | Self::ImageRef { id, .. } => id,
         }
     }
+
+    /// Return annotation refs attached to the block.
+    #[must_use]
+    pub fn annotation_refs(&self) -> &[AnnotationRef] {
+        match self {
+            Self::Heading { annotations, .. }
+            | Self::Paragraph { annotations, .. }
+            | Self::List { annotations, .. }
+            | Self::Quote { annotations, .. } => annotations,
+            Self::TableRef { placement, .. } => &placement.annotations,
+            Self::ImageRef { placement, .. } => &placement.annotations,
+            Self::CodeBlock { .. } | Self::MathBlock { .. } => &[],
+        }
+    }
+}
+
+/// Annotation marker embedded in Markdown and resolved to sidecar metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationRef {
+    /// Referenced annotation id.
+    pub id: String,
+    /// UTF-8 byte offset in the cleaned block text, when the marker is inline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_offset: Option<usize>,
 }
 
 /// 1-based source span in the Markdown entrypoint.

@@ -6,8 +6,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "prebuild": "npm run build:wasm",
     "build": "tsc",
-    "test": "vitest",
+    "pretest": "npm run build:wasm",
+    "test": "vitest run",
+    "pretypecheck": "npm run build:wasm",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

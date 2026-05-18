@@ -2,7 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
+    fs,
     io::{Cursor, Read, Seek},
     path::Path,
 };
@@ -31,13 +31,37 @@ pub struct McdPackage {
 impl McdPackage {
     /// Open a package from a filesystem path.
     pub fn open_path(path: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(path)?;
-        Self::from_reader(file)
+        let bytes = fs::read(path)?;
+        Self::from_bytes(&bytes)
     }
 
     /// Open a package from in-memory bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        Self::from_reader(Cursor::new(bytes))
+        match Self::from_reader(Cursor::new(bytes)) {
+            Ok(package) => Ok(package),
+            Err(err) if is_plain_markdown_candidate(bytes) => {
+                let markdown = std::str::from_utf8(bytes).map_err(|_| err)?;
+                Ok(Self::from_markdown(markdown))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Build a minimal package from a standalone Markdown document.
+    #[must_use]
+    pub fn from_markdown(markdown: &str) -> Self {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "mimetype".to_owned(),
+            format!("{MCD_MIMETYPE}\n").into_bytes(),
+        );
+        entries.insert(
+            "manifest.json".to_owned(),
+            br#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#
+                .to_vec(),
+        );
+        entries.insert("content/main.md".to_owned(), markdown.as_bytes().to_vec());
+        Self { entries }
     }
 
     /// Open a package from any readable and seekable ZIP stream.
@@ -197,6 +221,10 @@ impl McdPackage {
     }
 }
 
+fn is_plain_markdown_candidate(bytes: &[u8]) -> bool {
+    !bytes.starts_with(b"PK") && std::str::from_utf8(bytes).is_ok()
+}
+
 /// Validate and normalize a package-internal path.
 pub fn validate_internal_path(path: &str) -> Result<String> {
     if path.is_empty()
@@ -282,6 +310,27 @@ mod tests {
         assert_eq!(
             package.manifest().expect("manifest").entrypoint,
             "content/main.md"
+        );
+    }
+
+    #[test]
+    fn opens_plain_markdown_as_minimal_package() {
+        let markdown = "# Plain Markdown\n\nThis file was renamed to .mcd.\n";
+        let package = McdPackage::from_bytes(markdown.as_bytes()).expect("markdown opens");
+
+        assert_eq!(
+            package.entry_paths(),
+            vec!["content/main.md", "manifest.json", "mimetype"]
+        );
+        assert_eq!(
+            package.manifest().expect("manifest").entrypoint,
+            "content/main.md"
+        );
+        assert_eq!(
+            package
+                .read_to_string("content/main.md")
+                .expect("entrypoint markdown"),
+            markdown
         );
     }
 

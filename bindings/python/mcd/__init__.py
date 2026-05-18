@@ -1,6 +1,7 @@
 """Python API for Markdown CSV Document packages."""
 
 from ._native import (
+    Annotation,
     Block,
     Chart,
     Diagnostic,
@@ -14,6 +15,7 @@ from ._native import (
 )
 
 __all__ = [
+    "Annotation",
     "Block",
     "Chart",
     "Diagnostic",

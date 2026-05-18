@@ -41,6 +41,7 @@ fn schemas_are_valid_draft_2020_12_documents() {
         "table.schema.json",
         "table-view.schema.json",
         "image.schema.json",
+        "annotation.schema.json",
         "rendering.schema.json",
         "styles.schema.json",
         "page-map.schema.json",
@@ -74,6 +75,11 @@ fn valid_conformance_json_members_match_public_schemas() {
             jsonschema::validator_for(&load_json(&schema_path("image.schema.json")))
                 .expect("image schema compiles"),
         ),
+        (
+            "annotation",
+            jsonschema::validator_for(&load_json(&schema_path("annotation.schema.json")))
+                .expect("annotation schema compiles"),
+        ),
     ]);
 
     for fixture in valid_fixtures() {
@@ -84,6 +90,7 @@ fn valid_conformance_json_members_match_public_schemas() {
                 path if path.ends_with(".schema.json") => Some("table"),
                 path if path.ends_with(".view.json") => Some("table-view"),
                 path if path.ends_with(".image.json") => Some("image"),
+                path if path.ends_with(".annotation.json") => Some("annotation"),
                 _ => None,
             };
             let Some(schema_key) = schema_key else {

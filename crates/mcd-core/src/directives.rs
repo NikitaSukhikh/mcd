@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    document::AnnotationRef,
     document::SourceSpan,
     errors::{Diagnostic, McdError, Result},
 };
@@ -54,6 +55,9 @@ pub struct TablePlacement {
     /// Optional numbering mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numbering: Option<String>,
+    /// Annotation markers attached to this table or chart placement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotations: Vec<AnnotationRef>,
 }
 
 /// Parsed `:::image` placement.
@@ -75,6 +79,9 @@ pub struct ImagePlacement {
     /// Optional alt text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,
+    /// Annotation markers attached to this image placement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotations: Vec<AnnotationRef>,
 }
 
 /// Parse a `:::table` directive body.
@@ -85,7 +92,16 @@ pub fn parse_table_directive(
 ) -> Result<TablePlacement> {
     let fields = parse_fields(
         body,
-        &["ref", "table", "view", "display", "caption", "numbering"],
+        &[
+            "ref",
+            "table",
+            "view",
+            "display",
+            "caption",
+            "numbering",
+            "annotation",
+            "annotations",
+        ],
         source,
         options,
     )?;
@@ -118,6 +134,7 @@ pub fn parse_table_directive(
         display,
         caption: optional_field(&fields, "caption"),
         numbering: optional_field(&fields, "numbering"),
+        annotations: directive_annotation_refs(&fields),
     })
 }
 
@@ -129,7 +146,15 @@ pub fn parse_image_directive(
 ) -> Result<ImagePlacement> {
     let fields = parse_fields(
         body,
-        &["ref", "asset", "image", "caption", "alt"],
+        &[
+            "ref",
+            "asset",
+            "image",
+            "caption",
+            "alt",
+            "annotation",
+            "annotations",
+        ],
         source,
         options,
     )?;
@@ -150,7 +175,26 @@ pub fn parse_image_directive(
         image,
         caption: optional_field(&fields, "caption"),
         alt: optional_field(&fields, "alt"),
+        annotations: directive_annotation_refs(&fields),
     })
+}
+
+fn directive_annotation_refs(fields: &HashMap<String, String>) -> Vec<AnnotationRef> {
+    fields
+        .get("annotations")
+        .or_else(|| fields.get("annotation"))
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(|id| AnnotationRef {
+                    id: id.to_owned(),
+                    text_offset: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_fields(

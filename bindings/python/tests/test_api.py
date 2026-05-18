@@ -81,6 +81,30 @@ def test_agent_context_options() -> None:
     assert context["charts"][0]["tableId"] == "revenue"
 
 
+def test_annotation_metadata_access(tmp_path: Path) -> None:
+    package = tmp_path / "annotated.mcd"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("mimetype", "application/vnd.mcd+zip")
+        archive.writestr(
+            "manifest.json",
+            '{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md","annotations":[{"id":"review-intro","metadata":"annotations/review-intro.annotation.json"}]}',
+        )
+        archive.writestr("content/main.md", "# Annotated\n\nNeeds review.\n")
+        archive.writestr(
+            "annotations/review-intro.annotation.json",
+            '{"id":"review-intro","target":{"type":"document"},"kind":"comment","status":"open","body":"Review the opening copy.","labels":["review"]}',
+        )
+
+    doc = mcd.open(package)
+    annotations = doc.annotations()
+
+    assert len(annotations) == 1
+    assert annotations[0].id == "review-intro"
+    assert annotations[0].kind == "comment"
+    assert annotations[0].target()["type"] == "document"
+    assert doc.annotation("review-intro").labels == ["review"]
+
+
 def test_validation_failure_returns_diagnostic(tmp_path: Path) -> None:
     package = tmp_path / "missing-manifest.mcd"
     with zipfile.ZipFile(package, "w") as archive:

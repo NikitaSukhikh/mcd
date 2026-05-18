@@ -10,7 +10,7 @@ use comrak::{
 
 use crate::{
     directives::{DirectiveParseOptions, parse_image_directive, parse_table_directive},
-    document::{DocumentBlock, McdDocument, SourceSpan},
+    document::{AnnotationRef, DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError, Result},
 };
 
@@ -85,13 +85,14 @@ impl MarkdownBlockParser<'_> {
         match &data.value {
             NodeValue::Document => self.visit_container(node),
             NodeValue::Heading(heading) => {
-                let text = collect_plain_text(node);
+                let (text, annotations) = extract_inline_annotation_refs(&collect_plain_text(node));
                 let id = self.next_id("heading");
                 self.blocks.push(DocumentBlock::Heading {
                     id,
                     level: heading.level,
                     text,
                     source,
+                    annotations,
                 });
                 Ok(())
             }
@@ -104,21 +105,26 @@ impl MarkdownBlockParser<'_> {
                         source,
                     });
                 } else {
+                    let (text, annotations) =
+                        extract_inline_annotation_refs(&collect_plain_text(node));
                     let id = self.next_id("paragraph");
                     self.blocks.push(DocumentBlock::Paragraph {
                         id,
-                        text: collect_plain_text(node),
+                        text,
                         source,
+                        annotations,
                     });
                 }
                 Ok(())
             }
             NodeValue::List(_) => {
+                let (text, annotations) = extract_inline_annotation_refs(&collect_plain_text(node));
                 let id = self.next_id("list");
                 self.blocks.push(DocumentBlock::List {
                     id,
-                    text: collect_plain_text(node),
+                    text,
                     source,
+                    annotations,
                 });
                 Ok(())
             }
@@ -136,16 +142,19 @@ impl MarkdownBlockParser<'_> {
                         language: (!info.is_empty()).then(|| info.to_string()),
                         text,
                         source,
+                        annotations: Vec::new(),
                     });
                 }
                 Ok(())
             }
             NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => {
+                let (text, annotations) = extract_inline_annotation_refs(&collect_plain_text(node));
                 let id = self.next_id("quote");
                 self.blocks.push(DocumentBlock::Quote {
                     id,
-                    text: collect_plain_text(node),
+                    text,
                     source,
+                    annotations,
                 });
                 Ok(())
             }
@@ -210,6 +219,7 @@ impl MarkdownBlockParser<'_> {
                     id,
                     text: collect_plain_text(node),
                     source,
+                    annotations: Vec::new(),
                 });
                 Ok(())
             }
@@ -220,6 +230,7 @@ impl MarkdownBlockParser<'_> {
                     language: Some("html".to_string()),
                     text: html.literal.clone(),
                     source,
+                    annotations: Vec::new(),
                 });
                 Ok(())
             }
@@ -357,6 +368,40 @@ fn normalize_collected_text(text: &str) -> String {
         .to_string()
 }
 
+fn extract_inline_annotation_refs(text: &str) -> (String, Vec<AnnotationRef>) {
+    let mut cleaned = String::new();
+    let mut annotations = Vec::new();
+    let mut rest = text;
+
+    while let Some(start) = rest.find("[[annotation:") {
+        cleaned.push_str(&rest[..start]);
+        let marker = &rest[start + "[[annotation:".len()..];
+        let Some(end) = marker.find("]]") else {
+            cleaned.push_str(&rest[start..]);
+            return (cleaned, annotations);
+        };
+
+        let id = marker[..end].trim();
+        if id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+            && !id.is_empty()
+        {
+            annotations.push(AnnotationRef {
+                id: id.to_owned(),
+                text_offset: Some(cleaned.len()),
+            });
+            rest = &marker[end + 2..];
+        } else {
+            cleaned.push_str(&rest[..start + "[[annotation:".len() + end + 2]);
+            rest = &marker[end + 2..];
+        }
+    }
+
+    cleaned.push_str(rest);
+    (cleaned, annotations)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +454,25 @@ mod tests {
             err.diagnostic().map(|d| d.code.as_str()),
             Some("directive.chart.unsupported")
         );
+    }
+
+    #[test]
+    fn extracts_inline_annotation_markers_from_text() {
+        let doc = parse_markdown(
+            "content/main.md",
+            "Revenue[[annotation:review-revenue]] increased.\n",
+        )
+        .expect("markdown parses");
+
+        match &doc.blocks[0] {
+            DocumentBlock::Paragraph {
+                text, annotations, ..
+            } => {
+                assert_eq!(text, "Revenue increased.");
+                assert_eq!(annotations[0].id, "review-revenue");
+                assert_eq!(annotations[0].text_offset, Some("Revenue".len()));
+            }
+            other => panic!("expected paragraph, got {other:?}"),
+        }
     }
 }

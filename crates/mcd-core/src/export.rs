@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Manifest, McdPackage,
+    annotations::{AnnotationMetadata, load_manifest_annotations, validate_annotation_markers},
     directives::{ImagePlacement, TableDisplay, TablePlacement},
     document::{DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
@@ -30,6 +31,9 @@ pub struct JsonExport {
     /// Parsed image metadata objects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ImageMetadata>,
+    /// Parsed annotation metadata objects.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotations: Vec<AnnotationMetadata>,
     /// Chart placements with exact source table and view metadata.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub charts: Vec<ChartExportItem>,
@@ -47,6 +51,13 @@ pub struct TableExport {
 pub struct ImageExport {
     /// Image metadata objects in manifest order.
     pub images: Vec<ImageMetadata>,
+}
+
+/// Annotation metadata extraction export.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnotationExport {
+    /// Annotation metadata objects in manifest order.
+    pub annotations: Vec<AnnotationMetadata>,
 }
 
 /// Loaded views for one table.
@@ -128,6 +139,9 @@ pub struct AgentContextExport {
     /// Image metadata with semantic flags.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<AgentImageContext>,
+    /// Review annotations and proposed changes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotations: Vec<AnnotationMetadata>,
 }
 
 /// Agent context for one chart placement.
@@ -183,6 +197,8 @@ pub fn json_export(package: &McdPackage) -> crate::Result<JsonExport> {
     let tables = crate::tables::load_manifest_tables(package, &manifest)?;
     let views = load_manifest_table_views(package, &manifest)?;
     let images = crate::images::load_manifest_images(package, &manifest)?;
+    let annotations = load_manifest_annotations(package, &manifest, &document)?;
+    validate_annotation_markers(&document, &annotations)?;
     let charts = chart_export_from_parts(&document, &tables, &views)?.charts;
     Ok(JsonExport {
         manifest,
@@ -196,6 +212,7 @@ pub fn json_export(package: &McdPackage) -> crate::Result<JsonExport> {
             })
             .collect(),
         images: images.into_values().collect(),
+        annotations: annotations.into_values().collect(),
         charts,
     })
 }
@@ -244,6 +261,17 @@ pub fn image_export(package: &McdPackage) -> crate::Result<ImageExport> {
     Ok(ImageExport { images })
 }
 
+/// Build an annotation metadata export for a package.
+pub fn annotation_export(package: &McdPackage) -> crate::Result<AnnotationExport> {
+    let manifest = package.manifest()?;
+    let document = McdDocument::from_package(package, &manifest)?;
+    let annotations = load_manifest_annotations(package, &manifest, &document)?;
+    validate_annotation_markers(&document, &annotations)?;
+    Ok(AnnotationExport {
+        annotations: annotations.into_values().collect(),
+    })
+}
+
 /// Build a chart metadata export for a package.
 pub fn chart_export(package: &McdPackage) -> crate::Result<ChartExport> {
     let manifest = package.manifest()?;
@@ -277,6 +305,8 @@ pub fn agent_context_export(package: &McdPackage) -> crate::Result<AgentContextE
     let tables = crate::tables::load_manifest_tables(package, &manifest)?;
     let views = load_manifest_table_views(package, &manifest)?;
     let images = crate::images::load_manifest_images(package, &manifest)?;
+    let annotations = load_manifest_annotations(package, &manifest, &document)?;
+    validate_annotation_markers(&document, &annotations)?;
     let chart_export = chart_export_from_parts(&document, &tables, &views)?;
 
     Ok(AgentContextExport {
@@ -309,6 +339,7 @@ pub fn agent_context_export(package: &McdPackage) -> crate::Result<AgentContextE
                 meaningful_content: image.meaningful_content,
             })
             .collect(),
+        annotations: annotations.into_values().collect(),
     })
 }
 

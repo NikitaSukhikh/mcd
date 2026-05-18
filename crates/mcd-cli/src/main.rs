@@ -52,9 +52,26 @@ enum Command {
         /// Emit image metadata.
         #[arg(long)]
         images: bool,
+        /// Emit annotation metadata.
+        #[arg(long)]
+        annotations: bool,
         /// Emit chart metadata and source data.
         #[arg(long)]
         charts: bool,
+    },
+    /// Render an MCD package.
+    Render {
+        /// Package file to render.
+        file: PathBuf,
+        /// Emit standalone HTML.
+        #[arg(long)]
+        html: bool,
+        /// Emit Markdown with package tables embedded as plain Markdown tables.
+        #[arg(long)]
+        markdown: bool,
+        /// Output rendered file path.
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Pack an unpacked directory into an MCD package.
     Pack {
@@ -98,8 +115,24 @@ fn main() -> Result<()> {
             expand_tables,
             tables,
             images,
+            annotations,
             charts,
-        } => commands::extract::run(&file, json, markdown, expand_tables, tables, images, charts),
+        } => commands::extract::run(
+            &file,
+            json,
+            markdown,
+            expand_tables,
+            tables,
+            images,
+            annotations,
+            charts,
+        ),
+        Command::Render {
+            file,
+            html,
+            markdown,
+            output,
+        } => commands::render::run(&file, html, markdown, &output),
         Command::Pack { directory, output } => commands::pack::run(&directory, &output),
         Command::Unpack { file, output } => commands::unpack::run(&file, &output),
         Command::Init { directory } => commands::init::run(&directory),

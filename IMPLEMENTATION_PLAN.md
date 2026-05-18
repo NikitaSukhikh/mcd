@@ -16,6 +16,7 @@ and that the first target is a usable alpha parser, validator, CLI, and Python A
 - Treat visual content with one rule: anything visual is allowed, but anything meaningful must also be represented as Markdown text, typed table data, or machine-readable layout/view metadata.
 - Store images as asset-backed metadata objects, not as semantic content.
 - Treat charts as rendered views of typed CSV tables, not as standalone image objects.
+- Store annotations as first-class sidecar metadata objects so reviews, flags, and proposed changes remain version-control-friendly and machine-readable without changing canonical content.
 - Prefer SVG for diagrams and generated chart assets, while disallowing scripts, active behavior, and external resource loading inside SVG.
 - Use Apache-2.0 for code, CC-BY-4.0 for docs/specs, and CC0-1.0 for schemas, examples, and fixtures.
 
@@ -32,13 +33,14 @@ The first public alpha should include:
 - Table view loader and view-column validation.
 - Chart view validation through table views with `display: chart`.
 - Image metadata loader and asset validation.
+- Annotation metadata loader and target/proposed-change validation.
 - Canonical document block stream.
 - Expanded Markdown export.
 - JSON extraction export.
 - Structured diagnostics.
 - CLI commands for `inspect`, `validate`, `extract`, `pack`, `unpack`, and `init`.
 - Python bindings exposing the core parser.
-- JSON schemas for manifest, table schema, table view, image metadata, generated renderings, styles, and page map.
+- JSON schemas for manifest, table schema, table view, image metadata, annotation metadata, generated renderings, styles, and page map.
 - Minimal, table-backed, image-backed, and chart-backed examples.
 - Valid, invalid, and security-focused conformance fixtures.
 
@@ -126,6 +128,7 @@ mcd/
         table_view.rs
         assets.rs
         images.rs
+        annotations.rs
         document.rs
         validate.rs
         export.rs
@@ -158,6 +161,7 @@ mcd/
     table.schema.json
     table-view.schema.json
     image.schema.json
+    annotation.schema.json
     rendering.schema.json
     styles.schema.json
     page-map.schema.json
@@ -644,6 +648,7 @@ Status:
 - [x] `mcd_core::document` implemented.
 - [x] `mcd_core::export` implemented.
 - [x] Canonical JSON document stream export implemented with tables, views, images, and chart placements.
+- [x] Annotation sidecar metadata is included in canonical JSON and agent-context exports.
 - [x] Original Markdown export implemented.
 - [x] Expanded Markdown export implemented with resolved table views.
 - [x] Expanded Markdown export for chart placements implemented as chart metadata plus source-data tables.
@@ -652,7 +657,7 @@ Status:
 - [x] Table extraction export implemented.
 - [x] Schema summary export API implemented.
 - [x] Agent context JSON export API implemented.
-- [x] `mcd extract` supports `--json`, `--markdown`, `--markdown --expand-tables`, `--tables`, `--images`, and `--charts`.
+- [x] `mcd extract` supports `--json`, `--markdown`, `--markdown --expand-tables`, `--tables`, `--images`, `--annotations`, and `--charts`.
 
 Implement:
 
@@ -687,7 +692,9 @@ Image export rules:
 
 - Expanded Markdown includes image caption and alt text.
 - JSON export includes image role, media type, intrinsic size, hash, and asset path.
+- JSON export includes annotation kind, status, target, labels, and proposed changes.
 - Agent context marks decorative images as non-semantic.
+- Agent context includes annotations as review/proposal metadata.
 - Agent context includes canonical Markdown/table references for meaningful image content when declared.
 
 CLI:
@@ -698,6 +705,7 @@ mcd extract report.mcd --markdown
 mcd extract report.mcd --markdown --expand-tables
 mcd extract report.mcd --tables
 mcd extract report.mcd --images
+mcd extract report.mcd --annotations
 mcd extract report.mcd --charts
 ```
 
@@ -709,6 +717,7 @@ Acceptance criteria:
 - Output ordering is deterministic.
 - Chart extraction returns exact table-backed data and view metadata.
 - Image extraction returns metadata without embedding large binary assets by default.
+- Annotation extraction returns review flags, targets, labels, status, and proposed changes without mutating source content.
 
 ## Phase 5: CLI completion - Completed 2026-05-18
 
@@ -722,6 +731,7 @@ Status:
 - [x] `pack` writes root `mimetype` first and adds it when missing.
 - [x] `unpack` validates archive entries before writing and refuses unsafe paths.
 - [x] `extract --images` emits image metadata and asset references without binary blobs.
+- [x] `extract --annotations` emits annotation metadata and proposed changes.
 - [x] `extract --charts` emits chart placements with source table IDs, view IDs, and typed source rows.
 - [x] CLI integration tests cover fixtures, JSON diagnostic shape, exit codes, and `init`/`pack`/`validate`.
 
@@ -736,6 +746,7 @@ mcd extract <file.mcd> --markdown
 mcd extract <file.mcd> --markdown --expand-tables
 mcd extract <file.mcd> --tables
 mcd extract <file.mcd> --images
+mcd extract <file.mcd> --annotations
 mcd extract <file.mcd> --charts
 mcd pack <directory> --output <file.mcd>
 mcd unpack <file.mcd> --output <directory>
@@ -751,6 +762,7 @@ Rules:
 - `pack` writes `mimetype` in the correct root position if possible.
 - `unpack` refuses unsafe archive entries.
 - `extract --images` emits image metadata and asset references, not binary blobs.
+- `extract --annotations` emits annotation metadata, targets, statuses, labels, and proposed changes.
 - `extract --charts` emits chart placements with their source table IDs, view IDs, and typed source rows.
 
 Acceptance criteria:
@@ -766,8 +778,8 @@ Status:
 
 - [x] `bindings/python` implemented using PyO3 and maturin.
 - [x] Python package name `mcd` implemented with a Rust extension module.
-- [x] Rust-backed Python API implemented for opening packages, validation, blocks, tables, charts, images, Markdown export, and agent context export.
-- [x] Python classes added for `Document`, `Block`, `Table`, `TableSchema`, `TableView`, `Chart`, `Image`, `ValidationResult`, and `Diagnostic`.
+- [x] Rust-backed Python API implemented for opening packages, validation, blocks, tables, charts, images, annotations, Markdown export, and agent context export.
+- [x] Python classes added for `Document`, `Block`, `Table`, `TableSchema`, `TableView`, `Chart`, `Image`, `Annotation`, `ValidationResult`, and `Diagnostic`.
 - [x] Chart API exposes source table/view IDs, optional pandas DataFrame conversion, Markdown table export, and layout metadata.
 - [x] Image API exposes asset path, role, alt text, caption, and intrinsic size.
 - [x] Rust diagnostics are converted into Python validation objects where appropriate, while fatal package/parser errors become Python exceptions.
@@ -828,6 +840,37 @@ image.caption
 image.intrinsic_size
 ```
 
+Annotation API:
+
+```python
+doc.annotations()
+doc.annotation("review-intro")
+annotation.target()
+annotation.proposed_change()
+```
+
+Markdown anchoring:
+
+```markdown
+Revenue[[annotation:review-intro]] increased year over year.
+
+:::table
+ref: revenue-table
+table: revenue
+annotations: review-table-source
+:::
+```
+
+Rules:
+
+- Annotation bodies remain sidecar JSON under `annotations/*.annotation.json`.
+- `main.md` contains only lightweight annotation markers.
+- Inline text markers use `[[annotation:<id>]]` and are stripped from canonical text while retained as block annotation references.
+- Table and image directives may attach annotations with `annotation: <id>` or `annotations: <id-a>, <id-b>`.
+- HTML rendering numbers annotation markers in document order.
+- HTML rendering appends a half-opacity annotation section at the end of the document for human readability.
+- Agent and JSON exports keep annotations as separate structured metadata linked by marker ids and source spans.
+
 Rules:
 
 - Keep parsing and validation in Rust.
@@ -851,6 +894,7 @@ Implement:
 - `schemas/table.schema.json`.
 - `schemas/table-view.schema.json`.
 - `schemas/image.schema.json`.
+- `schemas/annotation.schema.json`.
 - `schemas/rendering.schema.json`.
 - `schemas/styles.schema.json`.
 - `schemas/page-map.schema.json`.
@@ -862,6 +906,7 @@ Schema rules:
 - Chart views use `display: chart` and a required `chart` object.
 - Table views use `display: table` or omit `display`.
 - `image.schema.json` validates role, alt text, caption, media type, intrinsic size, hash, and canonical source references for meaningful visual content.
+- `annotation.schema.json` validates target type, kind, status, labels, body text, and optional proposed changes.
 - `rendering.schema.json` validates generated asset provenance, source table/view references, media type, and hash.
 - Manifest schema supports `conformance` claims including `MCD-Core`, `MCD-Images`, `MCD-Charts`, and `MCD-Strict`.
 
@@ -895,7 +940,19 @@ Acceptance criteria:
 - Fixture expected diagnostics are snapshot-tested.
 - Schemas, examples, and fixtures carry CC0-1.0 notices.
 
-## Phase 8: HTML renderer
+## Phase 8: HTML renderer - Completed 2026-05-18
+
+Status:
+
+- [x] `crates/mcd-render` implemented.
+- [x] Semantic standalone HTML output implemented from the canonical document stream.
+- [x] CSS generation implemented from a constrained subset of `layout/styles.json`.
+- [x] HTML image rendering implemented from validated image metadata with package assets embedded as data URIs.
+- [x] HTML chart rendering implemented from typed table data and chart view JSON.
+- [x] CLI support implemented for `mcd render report.mcd --html --output report.html`.
+- [x] Stable source IDs emitted through HTML IDs and `data-mcd-source-id`.
+- [x] Renderer tests cover table, image, chart, and stable HTML snapshot output.
+- [x] CLI integration test covers standalone HTML rendering.
 
 Implement after parser and validator stabilize:
 
@@ -955,7 +1012,7 @@ Acceptance criteria:
 - Chart page-map entries include table ID, view ID, bounding box, and rendered asset when present.
 - MCD-Rendered validation recognizes layout and page-map files.
 
-## Phase 10: WASM and TypeScript
+## Phase 10: WASM and TypeScript - Completed 2026-05-18
 
 Implement after Rust and Python APIs are stable:
 

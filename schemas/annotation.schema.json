@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/annotation.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD annotation metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "target", "kind", "status", "body"],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "target": { "$ref": "#/$defs/target" },
+    "kind": {
+      "enum": ["comment", "flag", "proposed_change", "question", "todo"]
+    },
+    "status": {
+      "enum": ["open", "accepted", "rejected", "resolved"]
+    },
+    "body": { "type": "string", "minLength": 1 },
+    "author": { "type": "string", "minLength": 1 },
+    "created": { "type": "string", "minLength": 1 },
+    "labels": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "proposedChange": { "$ref": "#/$defs/proposedChange" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?($|/))(?!.*[\\\\:])[^/\\\\:]+(?:/[^/\\\\:]+)*$"
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startLine", "startColumn", "endLine", "endColumn"],
+      "properties": {
+        "startLine": { "type": "integer", "minimum": 1 },
+        "startColumn": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "endColumn": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "document" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": { "const": "block" },
+            "id": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ref"],
+          "properties": {
+            "type": { "const": "placement" },
+            "ref": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": { "enum": ["table", "image"] },
+            "id": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path"],
+          "properties": {
+            "type": { "const": "path" },
+            "path": { "$ref": "#/$defs/packagePath" },
+            "source": { "$ref": "#/$defs/sourceSpan" }
+          }
+        }
+      ]
+    },
+    "proposedChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "text"],
+      "properties": {
+        "path": { "$ref": "#/$defs/packagePath" },
+        "replace": { "$ref": "#/$defs/sourceSpan" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

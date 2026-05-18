@@ -28,6 +28,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/image" }
     },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/annotation" }
+    },
     "assets": {
       "type": "array",
       "items": { "$ref": "#/$defs/asset" }
@@ -63,6 +67,15 @@
       }
     },
     "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "metadata"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "metadata": { "$ref": "#/$defs/packagePath" }
+      }
+    },
+    "annotation": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "metadata"],

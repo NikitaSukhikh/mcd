@@ -1,5 +1,6 @@
 //! Core parser, validator, and export APIs for MCD packages.
 
+pub mod annotations;
 pub mod assets;
 pub mod directives;
 pub mod document;

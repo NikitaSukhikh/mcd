@@ -368,6 +368,7 @@ mod tests {
             encoding: None,
             tables: Vec::new(),
             images: Vec::new(),
+            annotations: Vec::new(),
             assets: Vec::new(),
             layout: None,
         };

@@ -4,11 +4,12 @@ use std::path::PathBuf;
 
 use mcd_core::{
     McdError, McdPackage,
+    annotations::AnnotationMetadata,
     document::{DocumentBlock, McdDocument},
     errors::{Diagnostic, DiagnosticLevel},
     export::{
-        ChartExportItem, agent_context_export, chart_export, expanded_markdown_export,
-        image_export, original_markdown_export, table_export,
+        ChartExportItem, agent_context_export, annotation_export, chart_export,
+        expanded_markdown_export, image_export, original_markdown_export, table_export,
     },
     images::ImageMetadata,
     schema::TableSchema as CoreTableSchema,
@@ -104,6 +105,26 @@ impl PyDocument {
             })
             .map(|image| PyImage { image })
             .ok_or_else(|| PyKeyError::new_err(format!("unknown image '{id}'")))
+    }
+
+    fn annotation(&self, id: &str) -> PyResult<PyAnnotation> {
+        let annotations = annotation_export(&self.package)
+            .map_err(err_to_py)?
+            .annotations;
+        annotations
+            .into_iter()
+            .find(|annotation| annotation.id == id)
+            .map(|annotation| PyAnnotation { annotation })
+            .ok_or_else(|| PyKeyError::new_err(format!("unknown annotation '{id}'")))
+    }
+
+    fn annotations(&self) -> PyResult<Vec<PyAnnotation>> {
+        Ok(annotation_export(&self.package)
+            .map_err(err_to_py)?
+            .annotations
+            .into_iter()
+            .map(|annotation| PyAnnotation { annotation })
+            .collect())
     }
 
     #[pyo3(signature = (expand_tables = false))]
@@ -462,6 +483,70 @@ impl PyImage {
     }
 }
 
+#[pyclass(name = "Annotation", module = "mcd")]
+#[derive(Clone)]
+struct PyAnnotation {
+    annotation: AnnotationMetadata,
+}
+
+#[pymethods]
+impl PyAnnotation {
+    #[getter]
+    fn id(&self) -> String {
+        self.annotation.id.clone()
+    }
+
+    #[getter]
+    fn kind(&self) -> String {
+        format!("{:?}", self.annotation.kind).to_snake_case()
+    }
+
+    #[getter]
+    fn status(&self) -> String {
+        format!("{:?}", self.annotation.status).to_snake_case()
+    }
+
+    #[getter]
+    fn body(&self) -> String {
+        self.annotation.body.clone()
+    }
+
+    #[getter]
+    fn labels(&self) -> Vec<String> {
+        self.annotation.labels.clone()
+    }
+
+    fn target(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(&self.annotation.target).map_err(json_err_to_py)?,
+        )
+    }
+
+    fn proposed_change(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(&self.annotation.proposed_change).map_err(json_err_to_py)?,
+        )
+    }
+
+    fn as_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(&self.annotation).map_err(json_err_to_py)?,
+        )
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Annotation(id={:?}, kind={:?}, status={:?})",
+            self.annotation.id,
+            self.kind(),
+            self.status()
+        )
+    }
+}
+
 #[pyclass(name = "ValidationResult", module = "mcd")]
 #[derive(Clone)]
 struct PyValidationResult {
@@ -595,6 +680,7 @@ fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTableView>()?;
     module.add_class::<PyChart>()?;
     module.add_class::<PyImage>()?;
+    module.add_class::<PyAnnotation>()?;
     module.add_class::<PyValidationResult>()?;
     module.add_class::<PyDiagnostic>()?;
     Ok(())
@@ -774,6 +860,27 @@ impl ToKebabCase for str {
             if character.is_ascii_uppercase() {
                 if index > 0 {
                     output.push('-');
+                }
+                output.push(character.to_ascii_lowercase());
+            } else {
+                output.push(character);
+            }
+        }
+        output
+    }
+}
+
+trait ToSnakeCase {
+    fn to_snake_case(&self) -> String;
+}
+
+impl ToSnakeCase for str {
+    fn to_snake_case(&self) -> String {
+        let mut output = String::new();
+        for (index, character) in self.chars().enumerate() {
+            if character.is_ascii_uppercase() {
+                if index > 0 {
+                    output.push('_');
                 }
                 output.push(character.to_ascii_lowercase());
             } else {

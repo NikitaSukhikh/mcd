@@ -115,6 +115,30 @@ fn extract_modes_emit_stdout_and_reject_ambiguous_selection() {
     );
     assert!(!stdout(&images).contains("<svg"));
 
+    let annotated = temp_path("annotated.mcd");
+    write_zip(
+        &annotated,
+        &[
+            ("mimetype", "application/vnd.mcd+zip\n"),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md","annotations":[{"id":"review-intro","metadata":"annotations/review-intro.annotation.json"}]}"#,
+            ),
+            ("content/main.md", "# Annotated\n\nNeeds review.\n"),
+            (
+                "annotations/review-intro.annotation.json",
+                r#"{"id":"review-intro","target":{"type":"document"},"kind":"comment","status":"open","body":"Review the opening copy.","labels":["review"]}"#,
+            ),
+        ],
+    );
+    let annotations = run(mcd().arg("extract").arg(&annotated).arg("--annotations"));
+    assert!(annotations.status.success(), "{}", stderr(&annotations));
+    let annotation_json: serde_json::Value =
+        serde_json::from_str(&stdout(&annotations)).expect("annotation json");
+    assert_eq!(annotation_json["annotations"][0]["id"], "review-intro");
+    assert_eq!(annotation_json["annotations"][0]["kind"], "comment");
+    let _ = fs::remove_file(annotated);
+
     let ambiguous = run(mcd()
         .arg("extract")
         .arg(&revenue)
@@ -123,6 +147,103 @@ fn extract_modes_emit_stdout_and_reject_ambiguous_selection() {
     assert!(!ambiguous.status.success());
     assert!(stdout(&ambiguous).is_empty());
     assert!(stderr(&ambiguous).contains("choose exactly one extraction mode"));
+}
+
+#[test]
+fn render_html_writes_standalone_output() {
+    let root = temp_path("render-html");
+    fs::create_dir_all(&root).expect("temp root");
+    let output_path = root.join("report.html");
+
+    let render = run(mcd()
+        .arg("render")
+        .arg(example_package("revenue-report"))
+        .arg("--html")
+        .arg("--output")
+        .arg(&output_path));
+
+    assert!(render.status.success(), "{}", stderr(&render));
+    assert!(stdout(&render).is_empty());
+    assert!(stderr(&render).is_empty());
+
+    let html = fs::read_to_string(&output_path).expect("rendered html");
+    assert!(html.contains("<!doctype html>"));
+    assert!(html.contains("data-mcd-ref=\"revenue-table\""));
+    assert!(html.contains("data-mcd-ref=\"revenue-chart\""));
+    assert!(html.contains("<svg class=\"mcd-chart\" role=\"img\""));
+    assert!(html.contains("GBP 125000"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn render_markdown_writes_plain_projection_with_embedded_tables() {
+    let root = temp_path("render-markdown");
+    fs::create_dir_all(&root).expect("temp root");
+    let output_path = root.join("report.md");
+
+    let render = run(mcd()
+        .arg("render")
+        .arg(example_package("revenue-report"))
+        .arg("--markdown")
+        .arg("--output")
+        .arg(&output_path));
+
+    assert!(render.status.success(), "{}", stderr(&render));
+    assert!(stdout(&render).is_empty());
+    assert!(stderr(&render).is_empty());
+
+    let markdown = fs::read_to_string(&output_path).expect("rendered markdown");
+    assert!(markdown.contains("# Revenue Report"));
+    assert!(markdown.contains("| Quarter | Revenue |"));
+    assert!(markdown.contains("| Q1 | GBP 125000 |"));
+    assert!(
+        markdown.contains(
+            "**Chart metadata:** table `revenue`, view `quarterly-bar-chart`, type `bar`."
+        )
+    );
+    assert!(!markdown.contains(":::table"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn plain_markdown_renamed_to_mcd_validates_and_renders() {
+    let root = temp_path("plain-markdown");
+    fs::create_dir_all(&root).expect("temp root");
+    let package = root.join("notes.mcd");
+    let output_path = root.join("notes.html");
+    fs::write(
+        &package,
+        "# Plain Markdown\n\nThis was saved as an `.mcd` file.\n",
+    )
+    .expect("markdown");
+
+    let validate = run(mcd().arg("validate").arg(&package));
+    assert!(validate.status.success(), "{}", stderr(&validate));
+    assert_eq!(stdout(&validate), "valid\n");
+
+    let inspect = run(mcd().arg("inspect").arg(&package));
+    assert!(inspect.status.success(), "{}", stderr(&inspect));
+    let inspect_json: serde_json::Value =
+        serde_json::from_str(&stdout(&inspect)).expect("inspect json");
+    assert_eq!(inspect_json["entrypoint"], "content/main.md");
+    assert_eq!(inspect_json["entries"], 3);
+
+    let render = run(mcd()
+        .arg("render")
+        .arg(&package)
+        .arg("--html")
+        .arg("--output")
+        .arg(&output_path));
+    assert!(render.status.success(), "{}", stderr(&render));
+
+    let html = fs::read_to_string(&output_path).expect("rendered html");
+    assert!(html.contains("<h1"));
+    assert!(html.contains("Plain Markdown"));
+    assert!(html.contains("This was saved as an .mcd file."));
+
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

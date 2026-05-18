@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     McdPackage,
+    annotations::{load_manifest_annotations, validate_annotation_markers},
     directives::TableDisplay,
     document::{DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
@@ -42,6 +43,8 @@ pub fn validate_package(package: &McdPackage) -> crate::Result<ValidationResult>
     validate_table_anchors(&document, &tables, &views)?;
     let images = load_manifest_images(package, &manifest)?;
     validate_image_anchors(&document, &images)?;
+    let annotations = load_manifest_annotations(package, &manifest, &document)?;
+    validate_annotation_markers(&document, &annotations)?;
     Ok(ValidationResult::valid())
 }
 

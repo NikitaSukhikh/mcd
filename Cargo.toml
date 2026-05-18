@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "crates/mcd-core",
+    "crates/mcd-render",
     "crates/mcd-cli",
+    "crates/mcd-wasm",
     "bindings/python",
 ]
 resolver = "3"

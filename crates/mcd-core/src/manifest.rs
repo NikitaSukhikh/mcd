@@ -34,6 +34,9 @@ pub struct Manifest {
     /// Declared image metadata objects.
     #[serde(default)]
     pub images: Vec<ImageManifestEntry>,
+    /// Declared annotation metadata objects.
+    #[serde(default)]
+    pub annotations: Vec<AnnotationManifestEntry>,
     /// Declared asset files or directories.
     #[serde(default)]
     pub assets: Vec<AssetManifestEntry>,
@@ -118,6 +121,29 @@ impl Manifest {
             validate_manifest_path("manifest.image.metadata.invalid", &image.metadata)?;
         }
 
+        let mut ids = std::collections::HashSet::new();
+        for annotation in &self.annotations {
+            if annotation.id.trim().is_empty() {
+                return Err(McdError::from_diagnostic(
+                    Diagnostic::error(
+                        "manifest.annotation.id.empty",
+                        "Annotation id cannot be empty.",
+                    )
+                    .with_source("manifest.json"),
+                ));
+            }
+            if !ids.insert(annotation.id.clone()) {
+                return Err(McdError::from_diagnostic(
+                    Diagnostic::error(
+                        "manifest.annotation.id.duplicate",
+                        format!("Duplicate annotation id '{}'.", annotation.id),
+                    )
+                    .with_source("manifest.json"),
+                ));
+            }
+            validate_manifest_path("manifest.annotation.metadata.invalid", &annotation.metadata)?;
+        }
+
         for asset in &self.assets {
             validate_manifest_path("manifest.asset.path.invalid", &asset.path)?;
         }
@@ -198,6 +224,15 @@ pub struct ImageManifestEntry {
     /// Stable image id.
     pub id: String,
     /// Image metadata JSON path.
+    pub metadata: String,
+}
+
+/// Manifest declaration for an annotation metadata object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnotationManifestEntry {
+    /// Stable annotation id.
+    pub id: String,
+    /// Annotation metadata JSON path.
     pub metadata: String,
 }
 
