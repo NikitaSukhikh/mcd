@@ -1,3 +1,5 @@
+//! Command line interface for Markdown CSV Document packages.
+
 use std::path::PathBuf;
 
 use anyhow::Result;

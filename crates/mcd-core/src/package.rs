@@ -66,7 +66,8 @@ impl McdPackage {
             let name = file.name().to_owned();
             let normalized = validate_internal_path(&name)?;
 
-            if !seen.insert(normalized.clone()) {
+            let duplicate_key = normalized.to_ascii_lowercase();
+            if !seen.insert(duplicate_key) {
                 return Err(McdError::from_diagnostic(
                     Diagnostic::error(
                         "security.path.duplicate",
@@ -151,12 +152,14 @@ impl McdPackage {
     /// Parse the root manifest.
     pub fn manifest(&self) -> Result<Manifest> {
         let bytes = self.read("manifest.json").map_err(|err| {
-            err.diagnostic().map_or(err, |_| {
+            if err.diagnostic().is_some() {
                 McdError::from_diagnostic(
                     Diagnostic::error("manifest.missing", "Package is missing manifest.json.")
                         .with_source("manifest.json"),
                 )
-            })
+            } else {
+                err
+            }
         })?;
         Manifest::from_slice(bytes)
     }
@@ -235,6 +238,8 @@ fn invalid_path(path: &str) -> McdError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
     #[test]
     fn validates_safe_paths() {
@@ -260,5 +265,104 @@ mod tests {
             err.diagnostic().map(|d| d.code.as_str()),
             Some("security.path.invalid")
         );
+    }
+
+    #[test]
+    fn opens_valid_minimal_package() {
+        let package = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", MCD_MIMETYPE),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+            ),
+            ("content/main.md", "# Minimal\n"),
+        ]))
+        .expect("package opens");
+
+        assert_eq!(
+            package.manifest().expect("manifest").entrypoint,
+            "content/main.md"
+        );
+    }
+
+    #[test]
+    fn missing_mimetype_fails_with_diagnostic() {
+        let err = McdPackage::from_bytes(&zip_bytes(&[(
+            "manifest.json",
+            r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+        )]))
+        .expect_err("missing mimetype should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("package.mimetype.missing")
+        );
+    }
+
+    #[test]
+    fn bad_mimetype_fails_with_diagnostic() {
+        let err = McdPackage::from_bytes(&zip_bytes(&[("mimetype", "text/plain")]))
+            .expect_err("bad mimetype should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("package.mimetype.invalid")
+        );
+    }
+
+    #[test]
+    fn missing_manifest_fails_with_diagnostic() {
+        let package =
+            McdPackage::from_bytes(&zip_bytes(&[("mimetype", MCD_MIMETYPE)])).expect("opens");
+        let err = package
+            .manifest()
+            .expect_err("missing manifest should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("manifest.missing")
+        );
+    }
+
+    #[test]
+    fn path_traversal_fixture_fails() {
+        let err = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", MCD_MIMETYPE),
+            ("../manifest.json", "{}"),
+        ]))
+        .expect_err("traversal should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("security.path.invalid")
+        );
+    }
+
+    #[test]
+    fn duplicate_normalized_path_fails() {
+        let err = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", MCD_MIMETYPE),
+            ("manifest.json", "{}"),
+            ("Manifest.json", "{}"),
+        ]))
+        .expect_err("duplicate path should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("security.path.duplicate")
+        );
+    }
+
+    fn zip_bytes(entries: &[(&str, &str)]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+        for (path, content) in entries {
+            writer.start_file(*path, options).expect("start file");
+            writer.write_all(content.as_bytes()).expect("write file");
+        }
+
+        writer.finish().expect("finish zip").into_inner()
     }
 }

@@ -79,7 +79,7 @@ pub enum McdError {
         /// Human-readable diagnostic message.
         diagnostic_message: String,
         /// Full diagnostic.
-        diagnostic: Diagnostic,
+        diagnostic: Box<Diagnostic>,
     },
 }
 
@@ -90,15 +90,15 @@ impl McdError {
         Self::Diagnostic {
             diagnostic_code: diagnostic.code.clone(),
             diagnostic_message: diagnostic.message.clone(),
-            diagnostic,
+            diagnostic: Box::new(diagnostic),
         }
     }
 
     /// Borrow the structured diagnostic when available.
     #[must_use]
-    pub const fn diagnostic(&self) -> Option<&Diagnostic> {
+    pub fn diagnostic(&self) -> Option<&Diagnostic> {
         match self {
-            Self::Diagnostic { diagnostic, .. } => Some(diagnostic),
+            Self::Diagnostic { diagnostic, .. } => Some(diagnostic.as_ref()),
             Self::Io(_) | Self::Zip(_) | Self::Json(_) | Self::Utf8(_) => None,
         }
     }

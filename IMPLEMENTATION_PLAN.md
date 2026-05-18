@@ -13,6 +13,10 @@ and that the first target is a usable alpha parser, validator, CLI, and Python A
 - Support MCD-Core before MCD-Rendered, MCD-Verified, or MCD-Signed.
 - Generate expanded Markdown and agent context on demand; do not store `llm.md`.
 - Keep v0.1 table storage as CSV plus JSON schema and optional JSON view.
+- Treat visual content with one rule: anything visual is allowed, but anything meaningful must also be represented as Markdown text, typed table data, or machine-readable layout/view metadata.
+- Store images as asset-backed metadata objects, not as semantic content.
+- Treat charts as rendered views of typed CSV tables, not as standalone image objects.
+- Prefer SVG for diagrams and generated chart assets, while disallowing scripts, active behavior, and external resource loading inside SVG.
 - Use Apache-2.0 for code, CC-BY-4.0 for docs/specs, and CC0-1.0 for schemas, examples, and fixtures.
 
 ## Target alpha scope
@@ -23,16 +27,19 @@ The first public alpha should include:
 - Package reader for `.mcd` archives.
 - Manifest parser and basic manifest validation.
 - Markdown parser with MCD table directive detection.
+- Markdown parser with MCD image directive detection.
 - CSV table loader with schema validation.
 - Table view loader and view-column validation.
+- Chart view validation through table views with `display: chart`.
+- Image metadata loader and asset validation.
 - Canonical document block stream.
 - Expanded Markdown export.
 - JSON extraction export.
 - Structured diagnostics.
 - CLI commands for `inspect`, `validate`, `extract`, `pack`, `unpack`, and `init`.
 - Python bindings exposing the core parser.
-- JSON schemas for manifest, table schema, table view, styles, and page map.
-- Minimal and table-backed examples.
+- JSON schemas for manifest, table schema, table view, image metadata, styles, and page map.
+- Minimal, table-backed, image-backed, and chart-backed examples.
 - Valid, invalid, and security-focused conformance fixtures.
 
 Out of scope for the first alpha:
@@ -44,6 +51,50 @@ Out of scope for the first alpha:
 - Custom layout engine.
 - Remote resources.
 - Domain-specific taxonomies.
+- OCR or automated extraction of text from image pixels.
+- General-purpose Vega-Lite compatibility.
+- Chart rendering verification against generated SVG/PDF output.
+
+## Visual content model
+
+MCD keeps visual material narrow and machine-readable:
+
+- Text lives in Markdown.
+- Numbers and meaningful tables live in CSV plus schema.
+- Charts are table views.
+- Images are visual assets with metadata.
+- Layout and rendered positions live in JSON.
+
+Conformance levels:
+
+```text
+MCD-Core
+  Markdown text, typed tables, layout, and page-map references.
+
+MCD-Images
+  Images allowed with declared role, alt text, caption, dimensions, media type, and hash.
+
+MCD-Charts
+  Charts allowed only as table-backed views.
+
+MCD-Strict
+  No meaningful text, table, or numeric content may exist only inside an image.
+```
+
+Fully machine-readable visual documents should claim:
+
+```json
+{
+  "conformance": [
+    "MCD-Core",
+    "MCD-Images",
+    "MCD-Charts",
+    "MCD-Strict"
+  ]
+}
+```
+
+The first alpha should validate declared metadata and cross-file references. It should not attempt OCR or pixel-based semantic inference.
 
 ## Repository setup
 
@@ -73,6 +124,8 @@ mcd/
         tables.rs
         schema.rs
         table_view.rs
+        assets.rs
+        images.rs
         document.rs
         validate.rs
         export.rs
@@ -104,6 +157,7 @@ mcd/
     manifest.schema.json
     table.schema.json
     table-view.schema.json
+    image.schema.json
     styles.schema.json
     page-map.schema.json
 
@@ -124,6 +178,30 @@ mcd/
           revenue.csv
           revenue.schema.json
           revenue.view.json
+    visual-report/
+      unpacked/
+        mimetype
+        manifest.json
+        content/
+          main.md
+        assets/
+          process-diagram.svg
+          factory-photo.jpg
+        images/
+          process-diagram.image.json
+          factory-photo.image.json
+    chart-report/
+      unpacked/
+        mimetype
+        manifest.json
+        content/
+          main.md
+        tables/
+          revenue.csv
+          revenue.schema.json
+          revenue.chart.view.json
+        rendered/
+          revenue-chart.svg
 
   tests/
     fixtures/
@@ -133,7 +211,16 @@ mcd/
       conformance/
 ```
 
-## Phase 0: Project foundation
+## Phase 0: Project foundation - Completed 2026-05-18
+
+Status:
+
+- [x] Workspace, `mcd-core`, and `mcd-cli` created.
+- [x] Apache-2.0 `LICENSE` already present and `NOTICE` added.
+- [x] License notes for docs, schemas, examples, and fixtures added to `NOTICE`.
+- [x] Formatting and placeholder tests pass locally.
+- [x] `mcd --help` runs.
+- [ ] Minimal CI workflow deferred until a remote repository is available.
 
 Deliverables:
 
@@ -181,7 +268,19 @@ Acceptance criteria:
 - Wildcard dependency versions are tracked as temporary and pinned before release.
 - `DEPENDENCIES.md` remains the full project-wide dependency inventory; this phase lists only the dependencies needed to start the Rust parser, validator, CLI, and tests.
 
-## Phase 1: Package reader and manifest parser
+## Phase 1: Package reader and manifest parser - Completed 2026-05-18
+
+Status:
+
+- [x] `mcd_core::package::McdPackage` implemented.
+- [x] Safe archive opening from file path and byte slice implemented.
+- [x] Root `mimetype` read and validation implemented.
+- [x] Safe internal path handling implemented.
+- [x] Manifest file read implemented.
+- [x] `mcd_core::manifest::Manifest` and related structs implemented.
+- [x] Basic manifest validation implemented.
+- [x] Required archive protections covered by unit tests.
+- [x] `mcd inspect examples/minimal/minimal.mcd` runs against a real packed example.
 
 Implement:
 
@@ -233,8 +332,32 @@ Implement:
 ref: revenue-table
 table: revenue
 view: default
+display: table
 caption: Revenue by quarter
 numbering: auto
+:::
+```
+
+- Detection of chart placements through the same table directive family:
+
+```markdown
+:::table
+ref: revenue-chart
+table: revenue
+view: quarterly-bar-chart
+display: chart
+caption: Revenue by quarter
+:::
+```
+
+- Detection of block image directives:
+
+```markdown
+:::image
+ref: process-diagram
+asset: process-diagram
+caption: Facility layout showing intake, processing, quality control, and dispatch.
+alt: Diagram of the facility workflow from intake to dispatch.
 :::
 ```
 
@@ -248,6 +371,7 @@ code_block
 quote
 math_block
 table_ref
+image_ref
 ```
 
 - Source spans where available.
@@ -256,6 +380,10 @@ table_ref
 Validation rules:
 
 - Every table directive must include `table`.
+- Table directive `display` must be `table` or `chart`; omitted `display` defaults to `table`.
+- Table directives with `display: chart` must include `view`.
+- No separate `:::chart` directive is supported in v0.1.
+- Every image directive must include `asset` or a resolvable image metadata reference.
 - Placement `ref` values must be unique when present.
 - Directive fields must be known in strict mode.
 - Markdown pipe tables are not canonical semantic tables in MCD-Core.
@@ -270,7 +398,10 @@ Acceptance criteria:
 
 - Markdown blocks are emitted in source order.
 - Table anchors appear exactly where declared.
+- Chart anchors appear as table placements with `display: chart`.
+- Image anchors appear exactly where declared.
 - Invalid table directive syntax produces a structured diagnostic.
+- Invalid image directive syntax produces a structured diagnostic.
 - Duplicate placement refs fail validation.
 
 ## Phase 3: Table data, schema, and view validation

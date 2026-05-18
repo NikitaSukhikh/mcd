@@ -18,7 +18,6 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
-pedantic = "warn"
 
 [profile.release]
 lto = "thin"
