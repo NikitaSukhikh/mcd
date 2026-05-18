@@ -8,6 +8,7 @@ use crate::{
     directives::TableDisplay,
     document::{DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
+    images::{load_manifest_images, validate_image_anchors},
     table_view::TableView,
     tables::{DataTable, load_manifest_tables},
 };
@@ -39,6 +40,8 @@ pub fn validate_package(package: &McdPackage) -> crate::Result<ValidationResult>
     let tables = load_manifest_tables(package, &manifest)?;
     let views = load_and_validate_views(package, &manifest, &tables)?;
     validate_table_anchors(&document, &tables, &views)?;
+    let images = load_manifest_images(package, &manifest)?;
+    validate_image_anchors(&document, &images)?;
     Ok(ValidationResult::valid())
 }
 
@@ -307,6 +310,111 @@ mod tests {
         assert_validation_code(&package, "chart.view.not_chart");
     }
 
+    #[test]
+    fn validates_image_package() {
+        let package = image_package(
+            safe_svg(),
+            image_metadata(
+                "diagram",
+                r#""alt":"Workflow diagram","caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+
+        validate_package(&package).expect("valid image package");
+    }
+
+    #[test]
+    fn rejects_missing_image_asset() {
+        let package = image_package_without_asset(
+            image_metadata(
+                "diagram",
+                r#""alt":"Workflow diagram","caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+
+        assert_validation_code(&package, "asset.missing");
+    }
+
+    #[test]
+    fn rejects_missing_informative_image_alt() {
+        let package = image_package(
+            safe_svg(),
+            image_metadata(
+                "informative",
+                r#""caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+
+        assert_validation_code(&package, "image.alt.missing");
+    }
+
+    #[test]
+    fn rejects_unresolved_image_anchor() {
+        let package = image_package(
+            safe_svg(),
+            image_metadata(
+                "diagram",
+                r#""alt":"Workflow diagram","caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: missing-image\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+
+        assert_validation_code(&package, "image.anchor.unresolved");
+    }
+
+    #[test]
+    fn rejects_svg_script_and_external_resource() {
+        let script_package = image_package(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#,
+            image_metadata(
+                "diagram",
+                r#""alt":"Workflow diagram","caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+        assert_validation_code(&script_package, "security.svg.active_content");
+
+        let external_package = image_package(
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/x.png"/></svg>"#,
+            image_metadata(
+                "diagram",
+                r#""alt":"Workflow diagram","caption":"Workflow diagram.","hash":null"#,
+            ),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images"]"#,
+        );
+        assert_validation_code(&external_package, "security.svg.external_reference");
+    }
+
+    #[test]
+    fn rejects_image_only_table_under_strict() {
+        let package = image_package(
+            safe_svg(),
+            r#"{
+                "id":"process-diagram",
+                "asset":"assets/process-diagram.svg",
+                "mediaType":"image/svg+xml",
+                "role":"diagram",
+                "alt":"Image of a table.",
+                "caption":"Table image.",
+                "meaningfulContent":{"tableData":true}
+            }"#
+            .to_owned(),
+            ":::image\nasset: process-diagram\n:::\n",
+            r#""conformance":["MCD-Core","MCD-Images","MCD-Strict"]"#,
+        );
+
+        assert_validation_code(&package, "image.meaningful_content.unlinked");
+    }
+
     fn assert_validation_code(package: &McdPackage, code: &str) {
         let err = validate_package(package).expect_err("package should be invalid");
         assert_eq!(err.diagnostic().map(|d| d.code.as_str()), Some(code));
@@ -332,6 +440,65 @@ mod tests {
             ("tables/revenue.chart.view.json", chart_view_json),
         ]))
         .expect("package opens")
+    }
+
+    fn image_package(
+        svg: &str,
+        image_json: String,
+        markdown: &str,
+        conformance: &str,
+    ) -> McdPackage {
+        McdPackage::from_bytes(&zip_bytes_owned(vec![
+            ("mimetype", crate::package::MCD_MIMETYPE.to_owned()),
+            ("manifest.json", image_manifest(conformance)),
+            ("content/main.md", markdown.to_owned()),
+            ("assets/process-diagram.svg", svg.to_owned()),
+            ("images/process-diagram.image.json", image_json),
+        ]))
+        .expect("package opens")
+    }
+
+    fn image_package_without_asset(
+        image_json: String,
+        markdown: &str,
+        conformance: &str,
+    ) -> McdPackage {
+        McdPackage::from_bytes(&zip_bytes_owned(vec![
+            ("mimetype", crate::package::MCD_MIMETYPE.to_owned()),
+            ("manifest.json", image_manifest(conformance)),
+            ("content/main.md", markdown.to_owned()),
+            ("images/process-diagram.image.json", image_json),
+        ]))
+        .expect("package opens")
+    }
+
+    fn image_manifest(conformance: &str) -> String {
+        format!(
+            r#"{{
+                "format":"MCD",
+                "version":"0.1",
+                "profile":"MCD-Core",
+                {conformance},
+                "entrypoint":"content/main.md",
+                "images":[{{"id":"process-diagram","metadata":"images/process-diagram.image.json"}}]
+            }}"#
+        )
+    }
+
+    fn image_metadata(role: &str, extra_fields: &str) -> String {
+        format!(
+            r#"{{
+                "id":"process-diagram",
+                "asset":"assets/process-diagram.svg",
+                "mediaType":"image/svg+xml",
+                "role":"{role}",
+                {extra_fields}
+            }}"#
+        )
+    }
+
+    fn safe_svg() -> &'static str {
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect width="120" height="60" fill="#f2f2f2"/><text x="10" y="35">Process</text></svg>"##
     }
 
     fn manifest() -> &'static str {
@@ -374,6 +541,19 @@ mod tests {
 
         for (path, content) in entries {
             writer.start_file(*path, options).expect("start file");
+            writer.write_all(content.as_bytes()).expect("write file");
+        }
+
+        writer.finish().expect("finish zip").into_inner()
+    }
+
+    fn zip_bytes_owned(entries: Vec<(&str, String)>) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+
+        for (path, content) in entries {
+            writer.start_file(path, options).expect("start file");
             writer.write_all(content.as_bytes()).expect("write file");
         }
 

@@ -17,6 +17,9 @@ pub struct Manifest {
     pub version: String,
     /// Conformance profile.
     pub profile: McdProfile,
+    /// Optional conformance claims.
+    #[serde(default)]
+    pub conformance: Vec<ConformanceClaim>,
     /// Markdown entrypoint path.
     pub entrypoint: String,
     /// Optional title.
@@ -28,6 +31,12 @@ pub struct Manifest {
     /// Declared tables.
     #[serde(default)]
     pub tables: Vec<TableManifestEntry>,
+    /// Declared image metadata objects.
+    #[serde(default)]
+    pub images: Vec<ImageManifestEntry>,
+    /// Declared asset files or directories.
+    #[serde(default)]
+    pub assets: Vec<AssetManifestEntry>,
     /// Optional layout file paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<LayoutManifestEntry>,
@@ -89,6 +98,30 @@ impl Manifest {
             }
         }
 
+        let mut ids = std::collections::HashSet::new();
+        for image in &self.images {
+            if image.id.trim().is_empty() {
+                return Err(McdError::from_diagnostic(
+                    Diagnostic::error("manifest.image.id.empty", "Image id cannot be empty.")
+                        .with_source("manifest.json"),
+                ));
+            }
+            if !ids.insert(image.id.clone()) {
+                return Err(McdError::from_diagnostic(
+                    Diagnostic::error(
+                        "manifest.image.id.duplicate",
+                        format!("Duplicate image id '{}'.", image.id),
+                    )
+                    .with_source("manifest.json"),
+                ));
+            }
+            validate_manifest_path("manifest.image.metadata.invalid", &image.metadata)?;
+        }
+
+        for asset in &self.assets {
+            validate_manifest_path("manifest.asset.path.invalid", &asset.path)?;
+        }
+
         if let Some(layout) = &self.layout {
             if let Some(styles) = &layout.styles {
                 validate_manifest_path("manifest.layout.styles.invalid", styles)?;
@@ -128,6 +161,23 @@ pub enum McdProfile {
     Signed,
 }
 
+/// Optional conformance claims.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConformanceClaim {
+    /// Core semantic conformance.
+    #[serde(rename = "MCD-Core")]
+    Core,
+    /// Image metadata conformance.
+    #[serde(rename = "MCD-Images")]
+    Images,
+    /// Chart conformance.
+    #[serde(rename = "MCD-Charts")]
+    Charts,
+    /// Strict machine-readable conformance.
+    #[serde(rename = "MCD-Strict")]
+    Strict,
+}
+
 /// Manifest declaration for a table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableManifestEntry {
@@ -140,6 +190,25 @@ pub struct TableManifestEntry {
     /// Named table views.
     #[serde(default)]
     pub views: IndexMap<String, String>,
+}
+
+/// Manifest declaration for an image metadata object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageManifestEntry {
+    /// Stable image id.
+    pub id: String,
+    /// Image metadata JSON path.
+    pub metadata: String,
+}
+
+/// Manifest declaration for an asset path or asset directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetManifestEntry {
+    /// Optional stable asset id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Asset file path or directory prefix.
+    pub path: String,
 }
 
 /// Optional layout paths in the manifest.

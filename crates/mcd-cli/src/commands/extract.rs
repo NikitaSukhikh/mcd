@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use mcd_core::{
     McdPackage,
-    export::{json_export, table_export},
+    export::{image_export, json_export, table_export},
 };
 
 pub fn run(
@@ -12,6 +12,7 @@ pub fn run(
     markdown: bool,
     expand_tables: bool,
     tables: bool,
+    images: bool,
 ) -> Result<()> {
     let package = McdPackage::open_path(file)?;
     let manifest = package.manifest()?;
@@ -37,5 +38,13 @@ pub fn run(
         return Ok(());
     }
 
-    bail!("choose one extraction mode: --json, --markdown, or --tables");
+    if images {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&image_export(&package)?)?
+        );
+        return Ok(());
+    }
+
+    bail!("choose one extraction mode: --json, --markdown, --tables, or --images");
 }

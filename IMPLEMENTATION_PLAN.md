@@ -545,7 +545,23 @@ Acceptance criteria:
 - Chart view with incompatible column types fails.
 - Chart anchor referencing a non-chart view fails.
 
-## Phase 3A: Images and visual asset validation
+## Phase 3A: Images and visual asset validation - Completed 2026-05-18
+
+Status:
+
+- [x] `mcd_core::assets` implemented.
+- [x] `mcd_core::images` implemented.
+- [x] Manifest image metadata entries and optional asset path entries implemented.
+- [x] Image metadata loading from `images/*.image.json` implemented.
+- [x] Image directive resolution from Markdown anchors to declared image metadata implemented.
+- [x] Media type detection and declared media type validation implemented.
+- [x] SHA-256 hash validation for referenced image assets implemented.
+- [x] Intrinsic size validation implemented.
+- [x] SVG safety validation implemented for scripts, event handlers, active animation, external references, and foreign content.
+- [x] Image role, alt text, caption, decorative image, meaningful content, and MCD-Strict validation rules implemented.
+- [x] `examples/visual-report/visual-report.mcd` added and validates.
+- [x] `mcd extract examples/visual-report/visual-report.mcd --json` emits image metadata.
+- [x] `mcd extract examples/visual-report/visual-report.mcd --images` emits image metadata without binary assets.
 
 Implement:
 
