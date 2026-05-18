@@ -15,7 +15,8 @@
       "Bash(cmd /c \"\"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"\" && set\")",
       "Bash(where:*)",
       "Bash(export LIB:*)",
-      "Bash(cargo install:*)"
+      "Bash(cargo install:*)",
+      "Bash(cargo audit:*)"
     ]
   }
 }

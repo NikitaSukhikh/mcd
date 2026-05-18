@@ -1,0 +1,1 @@
+//! Table schema parsing placeholder.

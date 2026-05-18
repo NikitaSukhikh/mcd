@@ -1,0 +1,1 @@
+//! Cross-file validation placeholder.
