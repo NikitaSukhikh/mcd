@@ -15,6 +15,7 @@ pub mod validate;
 pub use errors::{Diagnostic, McdError, Result};
 pub use manifest::Manifest;
 pub use package::McdPackage;
+pub use validate::ValidationResult;
 
 #[cfg(test)]
 mod tests {

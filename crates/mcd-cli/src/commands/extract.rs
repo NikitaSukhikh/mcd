@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use mcd_core::McdPackage;
+use mcd_core::{McdPackage, export::json_export};
 
 pub fn run(
     file: &Path,
@@ -14,7 +14,7 @@ pub fn run(
     let manifest = package.manifest()?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&manifest)?);
+        println!("{}", serde_json::to_string_pretty(&json_export(&package)?)?);
         return Ok(());
     }
 
