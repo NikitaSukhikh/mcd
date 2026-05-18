@@ -1,7 +1,10 @@
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use mcd_core::{McdPackage, export::json_export};
+use mcd_core::{
+    McdPackage,
+    export::{json_export, table_export},
+};
 
 pub fn run(
     file: &Path,
@@ -27,7 +30,11 @@ pub fn run(
     }
 
     if tables {
-        bail!("table extraction is not implemented yet");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&table_export(&package)?)?
+        );
+        return Ok(());
     }
 
     bail!("choose one extraction mode: --json, --markdown, or --tables");

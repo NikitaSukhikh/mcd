@@ -322,7 +322,21 @@ Acceptance criteria:
 - Path traversal fixture fails.
 - Duplicate normalized path fixture fails.
 
-## Phase 2: Markdown parser and table directives
+## Phase 2: Markdown parser and table directives - Completed 2026-05-18
+
+Status:
+
+- [x] `mcd_core::markdown` implemented.
+- [x] `mcd_core::directives` implemented.
+- [x] CommonMark-compatible Markdown parsing through `comrak` implemented.
+- [x] Block table directive detection implemented.
+- [x] Chart placement detection through `:::table` with `display: chart` implemented.
+- [x] Block image directive detection implemented.
+- [x] Canonical block stream types implemented for headings, paragraphs, lists, code blocks, quotes, math blocks, table refs, and image refs.
+- [x] Source spans included where available.
+- [x] Stable generated block IDs implemented.
+- [x] Directive validation rules implemented for required fields, display values, chart view requirement, unsupported `:::chart`, duplicate placement refs, and strict unknown fields.
+- [x] `mcd extract examples/revenue-report/revenue-report.mcd --json` runs against a real packed example.
 
 Implement:
 
@@ -408,7 +422,21 @@ Acceptance criteria:
 - Invalid image directive syntax produces a structured diagnostic.
 - Duplicate placement refs fail validation.
 
-## Phase 3: Table data, schema, and view validation
+## Phase 3: Table data, schema, and view validation - Completed 2026-05-18
+
+Status:
+
+- [x] `mcd_core::tables` implemented.
+- [x] `mcd_core::schema` implemented.
+- [x] `mcd_core::table_view` implemented.
+- [x] CSV loading from manifest-declared paths implemented.
+- [x] MCD table schema JSON parsing implemented.
+- [x] Table and chart view JSON parsing implemented.
+- [x] Typed value coercion implemented for string, integer, decimal, boolean, date, datetime, time, and enum values.
+- [x] Cross-file validation implemented between manifest, Markdown anchors, CSV files, schemas, and views.
+- [x] Chart view validation implemented for the alpha chart subset.
+- [x] `mcd validate examples/revenue-report/revenue-report.mcd` runs against the packed revenue example.
+- [x] `mcd extract examples/revenue-report/revenue-report.mcd --tables` emits typed table data.
 
 Implement:
 

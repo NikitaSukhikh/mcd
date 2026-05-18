@@ -42,6 +42,13 @@ impl Diagnostic {
         self.source = Some(source.into());
         self
     }
+
+    /// Attach a related source reference.
+    #[must_use]
+    pub fn with_related(mut self, related: impl Into<String>) -> Self {
+        self.related.push(related.into());
+        self
+    }
 }
 
 /// Diagnostic severity.
