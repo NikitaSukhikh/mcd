@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/table-view.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD table or chart view",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "table"],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "table": { "$ref": "#/$defs/id" },
+    "display": { "enum": ["table", "chart"] },
+    "columns": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/viewColumn" }
+    },
+    "chart": { "$ref": "#/$defs/chart" },
+    "style": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "display": { "const": "chart" } },
+        "required": ["display"]
+      },
+      "then": { "required": ["chart"] },
+      "else": {
+        "properties": {
+          "display": { "enum": ["table"] }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "columnName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+    },
+    "format": {
+      "enum": ["string", "number", "currency", "percent", "date", "datetime", "time"]
+    },
+    "viewColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/columnName" },
+        "label": { "type": "string", "minLength": 1 },
+        "format": { "$ref": "#/$defs/format" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "unit": { "type": "string", "minLength": 1 },
+        "percent": { "type": "boolean" }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "x", "y"],
+      "properties": {
+        "type": { "enum": ["bar", "line", "area", "scatter"] },
+        "x": { "$ref": "#/$defs/encoding" },
+        "y": { "$ref": "#/$defs/encoding" },
+        "series": { "$ref": "#/$defs/encoding" },
+        "grouping": { "$ref": "#/$defs/encoding" },
+        "markLabels": { "$ref": "#/$defs/markLabels" }
+      }
+    },
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column"],
+      "properties": {
+        "column": { "$ref": "#/$defs/columnName" },
+        "label": { "type": "string", "minLength": 1 },
+        "format": { "$ref": "#/$defs/format" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "unit": { "type": "string", "minLength": 1 },
+        "percent": { "type": "boolean" }
+      }
+    },
+    "markLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "show": { "type": "boolean" },
+        "column": { "$ref": "#/$defs/columnName" },
+        "format": { "$ref": "#/$defs/format" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "unit": { "type": "string", "minLength": 1 },
+        "percent": { "type": "boolean" }
+      }
+    }
+  }
+}

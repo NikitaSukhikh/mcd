@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/styles.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD styles",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/color" }
+    },
+    "page": { "$ref": "#/$defs/styleObject" },
+    "body": { "$ref": "#/$defs/styleObject" },
+    "tables": { "$ref": "#/$defs/styleObject" },
+    "charts": { "$ref": "#/$defs/styleObject" },
+    "images": { "$ref": "#/$defs/styleObject" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^(#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{8}|[A-Za-z][A-Za-z0-9_-]*)$"
+    },
+    "styleObject": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean", "null"]
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/page-map.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD page map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pages"],
+  "properties": {
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?($|/))(?!.*[\\\\:])[^/\\\\:]+(?:/[^/\\\\:]+)*$"
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "sourceRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packagePath" },
+          "uniqueItems": true
+        },
+        "rendered": { "$ref": "#/$defs/packagePath" }
+      }
+    }
+  }
+}

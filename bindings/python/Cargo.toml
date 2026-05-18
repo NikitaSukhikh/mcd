@@ -1,0 +1,18 @@
+[package]
+name = "mcd-python"
+version = "0.1.0-alpha.0"
+edition.workspace = true
+license.workspace = true
+description = "Python bindings for Markdown CSV Document packages."
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+mcd-core = { path = "../../crates/mcd-core" }
+pyo3 = { version = "0.23", features = ["extension-module"] }
+serde_json = "1"
+
+[lints]
+workspace = true

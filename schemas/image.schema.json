@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/image.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD image metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "asset", "mediaType", "role"],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "asset": { "$ref": "#/$defs/packagePath" },
+    "mediaType": {
+      "enum": ["image/svg+xml", "image/png", "image/jpeg", "image/webp", "image/gif"]
+    },
+    "role": {
+      "enum": [
+        "decorative",
+        "informative",
+        "diagram",
+        "photo",
+        "logo",
+        "rendered-table-prohibited",
+        "rendered-text-prohibited"
+      ]
+    },
+    "caption": { "type": "string" },
+    "alt": { "type": "string" },
+    "intrinsicSize": { "$ref": "#/$defs/intrinsicSize" },
+    "hash": { "$ref": "#/$defs/sha256" },
+    "accessibility": { "$ref": "#/$defs/accessibility" },
+    "meaningfulContent": { "$ref": "#/$defs/meaningfulContent" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "role": { "enum": ["informative", "diagram", "photo", "logo"] }
+        },
+        "required": ["role"]
+      },
+      "then": {
+        "required": ["alt"],
+        "properties": { "alt": { "minLength": 1 } }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "role": { "enum": ["informative", "diagram"] }
+        },
+        "required": ["role"]
+      },
+      "then": {
+        "required": ["caption"],
+        "properties": { "caption": { "minLength": 1 } }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?($|/))(?!.*[\\\\:])[^/\\\\:]+(?:/[^/\\\\:]+)*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "intrinsicSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "unit"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "unit": { "const": "px" }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowDecorativeAlt": { "type": "boolean" }
+      }
+    },
+    "meaningfulContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "boolean" },
+        "numbers": { "type": "boolean" },
+        "tableData": { "type": "boolean" },
+        "markdownRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "tableRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      },
+      "if": {
+        "anyOf": [
+          { "properties": { "text": { "const": true } }, "required": ["text"] },
+          { "properties": { "numbers": { "const": true } }, "required": ["numbers"] },
+          { "properties": { "tableData": { "const": true } }, "required": ["tableData"] }
+        ]
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["markdownRefs"], "properties": { "markdownRefs": { "minItems": 1 } } },
+          { "required": ["tableRefs"], "properties": { "tableRefs": { "minItems": 1 } } }
+        ]
+      }
+    }
+  }
+}

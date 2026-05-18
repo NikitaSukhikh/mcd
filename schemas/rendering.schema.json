@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/rendering.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD generated rendering metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "asset", "mediaType", "hash", "generatedFrom"],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "asset": { "$ref": "#/$defs/packagePath" },
+    "mediaType": {
+      "enum": ["image/svg+xml", "image/png", "image/jpeg", "image/webp", "text/html"]
+    },
+    "hash": { "$ref": "#/$defs/sha256" },
+    "generatedFrom": { "$ref": "#/$defs/generatedFrom" },
+    "renderer": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?($|/))(?!.*[\\\\:])[^/\\\\:]+(?:/[^/\\\\:]+)*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "generatedFrom": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "table": { "$ref": "#/$defs/id" },
+        "view": { "$ref": "#/$defs/id" },
+        "image": { "$ref": "#/$defs/id" },
+        "markdownRef": { "$ref": "#/$defs/id" }
+      },
+      "anyOf": [
+        { "required": ["table"] },
+        { "required": ["image"] },
+        { "required": ["markdownRef"] }
+      ]
+    }
+  }
+}

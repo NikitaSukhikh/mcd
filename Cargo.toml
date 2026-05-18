@@ -2,6 +2,7 @@
 members = [
     "crates/mcd-core",
     "crates/mcd-cli",
+    "bindings/python",
 ]
 resolver = "3"
 

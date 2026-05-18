@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcd-format.org/schemas/manifest.schema.json",
+  "$comment": "SPDX-License-Identifier: CC0-1.0",
+  "title": "MCD manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "profile", "entrypoint"],
+  "properties": {
+    "format": { "const": "MCD" },
+    "version": { "const": "0.1" },
+    "profile": {
+      "enum": ["MCD-Core", "MCD-Rendered", "MCD-Verified", "MCD-Signed"]
+    },
+    "conformance": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/conformanceClaim" },
+      "uniqueItems": true
+    },
+    "entrypoint": { "$ref": "#/$defs/packagePath" },
+    "title": { "type": "string", "minLength": 1 },
+    "encoding": { "type": "string", "minLength": 1 },
+    "tables": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/table" }
+    },
+    "images": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/image" }
+    },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "layout": { "$ref": "#/$defs/layout" }
+  },
+  "$defs": {
+    "conformanceClaim": {
+      "enum": ["MCD-Core", "MCD-Images", "MCD-Charts", "MCD-Strict"]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "packagePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?($|/))(?!.*[\\\\:])[^/\\\\:]+(?:/[^/\\\\:]+)*$"
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "data", "schema"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "data": { "$ref": "#/$defs/packagePath" },
+        "schema": { "$ref": "#/$defs/packagePath" },
+        "views": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/packagePath" }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "metadata"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "metadata": { "$ref": "#/$defs/packagePath" }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/packagePath" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "styles": { "$ref": "#/$defs/packagePath" },
+        "pageMap": { "$ref": "#/$defs/packagePath" }
+      }
+    }
+  }
+}

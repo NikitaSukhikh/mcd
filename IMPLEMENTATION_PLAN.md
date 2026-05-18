@@ -762,6 +762,19 @@ Acceptance criteria:
 
 ## Phase 6: Python bindings
 
+Status:
+
+- [x] `bindings/python` implemented using PyO3 and maturin.
+- [x] Python package name `mcd` implemented with a Rust extension module.
+- [x] Rust-backed Python API implemented for opening packages, validation, blocks, tables, charts, images, Markdown export, and agent context export.
+- [x] Python classes added for `Document`, `Block`, `Table`, `TableSchema`, `TableView`, `Chart`, `Image`, `ValidationResult`, and `Diagnostic`.
+- [x] Chart API exposes source table/view IDs, optional pandas DataFrame conversion, Markdown table export, and layout metadata.
+- [x] Image API exposes asset path, role, alt text, caption, and intrinsic size.
+- [x] Rust diagnostics are converted into Python validation objects where appropriate, while fatal package/parser errors become Python exceptions.
+- [x] pandas remains optional through the `pandas` extra.
+- [x] `maturin develop` works locally inside a virtualenv.
+- [x] pytest covers open, validate, blocks, tables, expanded Markdown, exceptions, image metadata, chart source data, and optional pandas DataFrame conversion when pandas is installed.
+
 Implement:
 
 - `bindings/python` using PyO3 and maturin.
@@ -830,7 +843,7 @@ Acceptance criteria:
 - Optional pandas extra can convert a table to a DataFrame when pandas is installed.
 - Optional pandas extra can convert chart source data to a DataFrame when pandas is installed.
 
-## Phase 7: JSON schemas and conformance fixtures
+## Phase 7: JSON schemas and conformance fixtures - Completed 2026-05-18
 
 Implement:
 

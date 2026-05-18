@@ -22,6 +22,8 @@ sha2 = "*"
 rust_decimal = { version = "*", features = ["serde"] }
 time = { version = "*", features = ["serde", "parsing", "formatting"] }
 camino = "*"
+mime_guess = "*"
+roxmltree = "*"
 
 [dev-dependencies]
 insta = "*"
@@ -63,28 +65,31 @@ crate-type = ["cdylib"]
 
 | Tool | Purpose |
 |------|---------|
-| PyO3 | Rust-Python bindings |
-| maturin | Build system for PyO3 projects |
+| PyO3 0.23 | Rust-Python bindings |
+| maturin >=1.7,<2 | Build system for PyO3 projects |
 
 ### pyproject.toml
 
 ```toml
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
 name = "mcd"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 
 [project.optional-dependencies]
-pandas = ["pandas>=1.0"]
+pandas = ["pandas>=1.5"]
+test = ["pytest>=8", "maturin>=1.7", "pandas>=1.5"]
 
 [tool.maturin]
+module-name = "mcd._native"
+python-source = "."
 features = ["pyo3/extension-module"]
 ```
 
@@ -94,7 +99,7 @@ features = ["pyo3/extension-module"]
 pytest
 ruff
 mypy
-pyright
+pandas (optional)
 ```
 
 ---
