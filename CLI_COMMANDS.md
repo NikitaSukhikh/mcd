@@ -14,6 +14,33 @@ After installing the CLI, use:
 mcd <command>
 ```
 
+## Quick Render
+
+1. Render an MCD file to HTML:
+
+```bash
+mcd render report.mcd --html --output report.html
+```
+
+For a repository example:
+
+```bash
+mcd render examples/revenue-report/revenue-report.mcd --html --output revenue-report.html
+```
+
+2. Open the generated HTML file in your browser:
+
+```bash
+start revenue-report.html
+```
+
+On macOS or Linux:
+
+```bash
+open revenue-report.html
+xdg-open revenue-report.html
+```
+
 ## Commands
 
 | Command | Purpose |
@@ -296,4 +323,3 @@ Example:
 ```bash
 mcd init work/report
 ```
-
