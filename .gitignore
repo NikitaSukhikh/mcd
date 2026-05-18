@@ -51,6 +51,10 @@ node_modules/
 .npm
 .eslintcache
 
+# PHP
+vendor/
+composer.lock
+
 # WASM
 pkg/
 *.wasm

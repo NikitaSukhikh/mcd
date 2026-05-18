@@ -1,0 +1,299 @@
+# MCD CLI Commands
+
+This file lists the available `mcd` command line commands and their options.
+
+Run from this repository with:
+
+```bash
+cargo run -p mcd-cli -- <command>
+```
+
+After installing the CLI, use:
+
+```bash
+mcd <command>
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `mcd inspect <file>` | Inspect an MCD package and print a JSON summary. |
+| `mcd add-annotation <file> <text> --page <page>` | Add a plain-text annotation to an MCD package. |
+| `mcd convert-pdf <file> --output <output>` | Convert a PDF into a minimal MCD package. |
+| `mcd validate <file>` | Validate an MCD package. |
+| `mcd extract <file> <mode>` | Extract content from an MCD package. |
+| `mcd render <file> <target> --output <output>` | Render an MCD package. |
+| `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
+| `mcd unpack <file> --output <directory>` | Unpack an MCD package into a directory. |
+| `mcd init <directory>` | Initialize a minimal unpacked MCD directory. |
+| `mcd help [command]` | Print global or command-specific help. |
+
+## Global Options
+
+```bash
+mcd --help
+mcd --version
+mcd help <command>
+```
+
+| Option | Purpose |
+| --- | --- |
+| `-h`, `--help` | Print help. |
+| `-V`, `--version` | Print the CLI version. |
+
+## `inspect`
+
+```bash
+mcd inspect <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to inspect. |
+
+Example:
+
+```bash
+mcd inspect examples/minimal/minimal.mcd
+```
+
+## `add-annotation`
+
+```bash
+mcd add-annotation [options] --page <page> <file> <text>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to update. |
+| `<text>` | Annotation body text. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--page <page>` | Required package path/page the annotation targets, for example `content/main.md`. |
+| `--line <line>` | Optional 1-based line in the target page. |
+| `--id <id>` | Optional stable annotation ID. Generated when omitted. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd add-annotation report.mcd "Check this paragraph." --page content/main.md
+mcd add-annotation report.mcd "Check this paragraph." --page content/main.md --line 18
+mcd add-annotation report.mcd "Check this paragraph." --page content/main.md --line 18 --id review-intro
+```
+
+## `convert-pdf`
+
+```bash
+mcd convert-pdf [options] --output <output> <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | PDF file to convert. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--output <output>` | Output MCD package path. |
+| `--title <title>` | Optional document title. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd convert-pdf source.pdf --output source.mcd
+mcd convert-pdf source.pdf --output source.mcd --title "Imported PDF"
+```
+
+## `validate`
+
+```bash
+mcd validate [options] <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to validate. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--format <format>` | Output format. Default: `text`. Possible values: `text`, `json`. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd validate report.mcd
+mcd validate report.mcd --format json
+```
+
+## `extract`
+
+```bash
+mcd extract [options] <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to extract from. |
+
+Choose exactly one extraction mode:
+
+| Option | Purpose |
+| --- | --- |
+| `--json` | Emit canonical JSON. |
+| `--markdown` | Emit Markdown. |
+| `--tables` | Emit table data. |
+| `--images` | Emit image metadata. |
+| `--annotations` | Emit annotation metadata. |
+| `--charts` | Emit chart metadata and source data. |
+| `--export annotations` | Export annotations by named content type. |
+
+Additional options:
+
+| Option | Purpose |
+| --- | --- |
+| `--expand-tables` | Expand table directives in Markdown output. Only valid with `--markdown`. |
+| `--page <page>` | Filter annotation export by package page/path. |
+| `--line <line>` | Filter annotation export by 1-based source line. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd extract report.mcd --json
+mcd extract report.mcd --markdown
+mcd extract report.mcd --markdown --expand-tables
+mcd extract report.mcd --tables
+mcd extract report.mcd --images
+mcd extract report.mcd --charts
+mcd extract report.mcd --annotations
+mcd extract report.mcd --annotations --page content/main.md --line 12
+```
+
+## `render`
+
+```bash
+mcd render [options] --output <output> <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to render. |
+
+Choose exactly one render target:
+
+| Option | Purpose |
+| --- | --- |
+| `--html` | Emit standalone HTML or an HTML project directory. |
+| `--markdown` | Emit Markdown with package tables embedded as plain Markdown tables. |
+
+Additional options:
+
+| Option | Purpose |
+| --- | --- |
+| `--output <output>` | Output rendered file path, or a directory for HTML project output. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd render report.mcd --html --output report.html
+mcd render report.mcd --html --output render/report
+mcd render report.mcd --markdown --output report.rendered.md
+```
+
+## `pack`
+
+```bash
+mcd pack --output <output> <directory>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<directory>` | Unpacked directory. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--output <output>` | Output package path. |
+| `-h`, `--help` | Print help. |
+
+Example:
+
+```bash
+mcd pack work/report --output report.mcd
+```
+
+## `unpack`
+
+```bash
+mcd unpack --output <output> <file>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to unpack. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--output <output>` | Output directory. |
+| `-h`, `--help` | Print help. |
+
+Example:
+
+```bash
+mcd unpack report.mcd --output work/report
+```
+
+## `init`
+
+```bash
+mcd init <directory>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<directory>` | Directory to initialize. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `-h`, `--help` | Print help. |
+
+Example:
+
+```bash
+mcd init work/report
+```
+

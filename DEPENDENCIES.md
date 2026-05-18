@@ -129,6 +129,28 @@ pandas (optional)
 
 ---
 
+## PHP Dependencies
+
+### composer.json
+
+```json
+{
+  "name": "mcd/parser",
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "Mcd\\": "src/"
+    }
+  }
+}
+```
+
+The PHP wrapper has no runtime package dependencies, but it requires the `mcd` CLI binary to be available on `PATH` or passed to `Mcd\Client`.
+
+---
+
 ## CI/CD Tools
 
 | Tool | Purpose |
@@ -159,6 +181,7 @@ pandas (optional)
 | Rust | Cargo | serde, serde_json, jsonschema, csv, zip, comrak, clap, thiserror, anyhow, time, rust_decimal, indexmap, sha2, camino, wasm-bindgen |
 | Python | pip/maturin | PyO3, maturin, pytest, ruff, mypy, pandas (optional) |
 | TypeScript | npm | typescript, vitest, playwright, wasm-pack |
+| PHP | Composer | PHP >=8.1, installed `mcd` CLI |
 
 ---
 
@@ -198,6 +221,17 @@ npm install
 # Build WASM package
 cd ../../crates/mcd-wasm
 wasm-pack build --target web
+```
+
+### PHP Setup
+
+```bash
+# Install wrapper dependencies
+cd bindings/php
+composer install
+
+# Run PHP wrapper tests
+composer test
 ```
 
 ---
