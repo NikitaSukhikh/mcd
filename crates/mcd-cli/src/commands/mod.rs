@@ -1,3 +1,4 @@
+pub mod add_annotation;
 pub mod extract;
 pub mod init;
 pub mod inspect;

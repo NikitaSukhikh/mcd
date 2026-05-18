@@ -25,6 +25,22 @@ enum Command {
         /// Package file to inspect.
         file: PathBuf,
     },
+    /// Add a plain-text annotation to an MCD package.
+    AddAnnotation {
+        /// Package file to update.
+        file: PathBuf,
+        /// Annotation body text.
+        text: String,
+        /// Package path/page the annotation targets, for example content/main.md.
+        #[arg(long)]
+        page: String,
+        /// Optional 1-based line in the target page.
+        #[arg(long)]
+        line: Option<usize>,
+        /// Optional stable annotation id. Generated when omitted.
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// Validate an MCD package.
     Validate {
         /// Package file to validate.
@@ -37,6 +53,9 @@ enum Command {
     Extract {
         /// Package file to extract from.
         file: PathBuf,
+        /// Export a named content type.
+        #[arg(long, value_enum)]
+        export: Option<ExportMode>,
         /// Emit canonical JSON.
         #[arg(long)]
         json: bool,
@@ -55,6 +74,12 @@ enum Command {
         /// Emit annotation metadata.
         #[arg(long)]
         annotations: bool,
+        /// Filter annotation export by package page/path.
+        #[arg(long)]
+        page: Option<String>,
+        /// Filter annotation export by 1-based source line.
+        #[arg(long)]
+        line: Option<usize>,
         /// Emit chart metadata and source data.
         #[arg(long)]
         charts: bool,
@@ -102,29 +127,49 @@ enum OutputFormat {
     Json,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum ExportMode {
+    Annotations,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Inspect { file } => commands::inspect::run(&file),
+        Command::AddAnnotation {
+            file,
+            text,
+            page,
+            line,
+            id,
+        } => commands::add_annotation::run(&file, &text, &page, line, id.as_deref()),
         Command::Validate { file, format } => commands::validate::run(&file, format),
         Command::Extract {
             file,
+            export,
             json,
             markdown,
             expand_tables,
             tables,
             images,
             annotations,
+            page,
+            line,
             charts,
         } => commands::extract::run(
             &file,
+            export.map(|mode| match mode {
+                ExportMode::Annotations => commands::extract::ExportMode::Annotations,
+            }),
             json,
             markdown,
             expand_tables,
             tables,
             images,
             annotations,
+            page.as_deref(),
+            line,
             charts,
         ),
         Command::Render {

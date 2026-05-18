@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Manifest, McdPackage,
-    annotations::{AnnotationMetadata, load_manifest_annotations, validate_annotation_markers},
+    annotations::{
+        AnnotationMetadata, AnnotationTarget, load_manifest_annotations,
+        validate_annotation_markers,
+    },
     directives::{ImagePlacement, TableDisplay, TablePlacement},
-    document::{DocumentBlock, McdDocument, SourceSpan},
+    document::{AnnotationRef, DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
     images::{ImageMetadata, ImageRole},
     schema::{ColumnType, TableColumnSchema},
@@ -230,10 +233,19 @@ pub fn expanded_markdown_export(package: &McdPackage) -> crate::Result<String> {
     let tables = crate::tables::load_manifest_tables(package, &manifest)?;
     let views = load_manifest_table_views(package, &manifest)?;
     let images = crate::images::load_manifest_images(package, &manifest)?;
+    let annotations = load_manifest_annotations(package, &manifest, &document)?;
+    validate_annotation_markers(&document, &annotations)?;
 
     let mut parts = Vec::new();
     for block in &document.blocks {
-        parts.push(render_expanded_block(block, &tables, &views, &images)?);
+        parts.push(render_expanded_block(
+            block,
+            &document,
+            &tables,
+            &views,
+            &images,
+            &annotations,
+        )?);
     }
 
     Ok(parts
@@ -429,36 +441,213 @@ fn chart_export_from_parts(
 
 fn render_expanded_block(
     block: &DocumentBlock,
+    document: &McdDocument,
     tables: &IndexMap<String, DataTable>,
     views: &IndexMap<String, IndexMap<String, TableView>>,
     images: &IndexMap<String, ImageMetadata>,
+    annotations: &IndexMap<String, AnnotationMetadata>,
 ) -> crate::Result<String> {
-    match block {
-        DocumentBlock::Heading { level, text, .. } => {
-            Ok(format!("{} {}", "#".repeat(usize::from(*level)), text))
-        }
-        DocumentBlock::Paragraph { text, .. } => Ok(text.clone()),
-        DocumentBlock::List { text, .. } => Ok(text
-            .lines()
-            .map(|line| format!("- {line}"))
-            .collect::<Vec<_>>()
-            .join("\n")),
-        DocumentBlock::CodeBlock { language, text, .. } => Ok(format!(
-            "```{}\n{}\n```",
-            language.as_deref().unwrap_or_default(),
-            text.trim_end()
+    let markdown: crate::Result<String> = match block {
+        DocumentBlock::Heading { level, text, .. } => Ok(format!(
+            "{} {}",
+            "#".repeat(usize::from(*level)),
+            render_annotated_markdown_text(text, block.annotation_refs(), annotations)
         )),
-        DocumentBlock::Quote { text, .. } => Ok(text
-            .lines()
-            .map(|line| format!("> {line}"))
-            .collect::<Vec<_>>()
-            .join("\n")),
+        DocumentBlock::Paragraph { text, .. } => Ok(render_annotated_markdown_text(
+            text,
+            block.annotation_refs(),
+            annotations,
+        )),
+        DocumentBlock::List { text, .. } => {
+            Ok(
+                render_annotated_markdown_text(text, block.annotation_refs(), annotations)
+                    .lines()
+                    .map(|line| format!("- {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        }
+        DocumentBlock::CodeBlock { language, text, .. } => {
+            let mut parts = vec![format!(
+                "```{}\n{}\n```",
+                language.as_deref().unwrap_or_default(),
+                text.trim_end()
+            )];
+            parts.extend(block_annotation_markdown(
+                block.annotation_refs(),
+                annotations,
+            ));
+            Ok(parts.join("\n"))
+        }
+        DocumentBlock::Quote { text, .. } => {
+            Ok(
+                render_annotated_markdown_text(text, block.annotation_refs(), annotations)
+                    .lines()
+                    .map(|line| format!("> {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        }
         DocumentBlock::MathBlock { text, .. } => Ok(format!("$$\n{}\n$$", text.trim())),
         DocumentBlock::TableRef { placement, .. } => {
-            render_table_placement(placement, tables, views)
+            let mut parts = vec![render_table_placement(placement, tables, views)?];
+            parts.extend(block_annotation_markdown(
+                block.annotation_refs(),
+                annotations,
+            ));
+            Ok(parts.join("\n\n"))
         }
-        DocumentBlock::ImageRef { placement, .. } => render_image_placement(placement, images),
+        DocumentBlock::ImageRef { placement, .. } => {
+            let mut parts = vec![render_image_placement(placement, images)?];
+            parts.extend(block_annotation_markdown(
+                block.annotation_refs(),
+                annotations,
+            ));
+            Ok(parts.join("\n\n"))
+        }
+    };
+    let markdown = markdown?;
+
+    Ok(append_path_annotations(
+        markdown,
+        block,
+        document,
+        annotations,
+    ))
+}
+
+fn render_annotated_markdown_text(
+    text: &str,
+    refs: &[AnnotationRef],
+    annotations: &IndexMap<String, AnnotationMetadata>,
+) -> String {
+    let mut inline_refs = refs
+        .iter()
+        .filter_map(|annotation_ref| {
+            annotation_ref
+                .text_offset
+                .map(|offset| (offset, annotation_ref))
+        })
+        .collect::<Vec<_>>();
+    inline_refs.sort_by_key(|(offset, _)| *offset);
+
+    let mut markdown = String::new();
+    let mut cursor = 0;
+    for (offset, annotation_ref) in inline_refs {
+        if offset > text.len() || offset < cursor {
+            continue;
+        }
+        markdown.push_str(&text[cursor..offset]);
+        if let Some(annotation) = annotations.get(&annotation_ref.id) {
+            markdown.push_str(&annotation_markdown(annotation));
+        }
+        cursor = offset;
     }
+    markdown.push_str(&text[cursor..]);
+
+    let block_annotations = refs
+        .iter()
+        .filter(|annotation_ref| annotation_ref.text_offset.is_none())
+        .filter_map(|annotation_ref| annotations.get(&annotation_ref.id))
+        .map(annotation_markdown)
+        .collect::<Vec<_>>();
+    if !block_annotations.is_empty() {
+        if !markdown.is_empty() {
+            markdown.push('\n');
+        }
+        markdown.push_str(&block_annotations.join("\n"));
+    }
+
+    markdown
+}
+
+fn block_annotation_markdown(
+    refs: &[AnnotationRef],
+    annotations: &IndexMap<String, AnnotationMetadata>,
+) -> Vec<String> {
+    refs.iter()
+        .filter_map(|annotation_ref| annotations.get(&annotation_ref.id))
+        .map(annotation_markdown)
+        .collect()
+}
+
+fn append_path_annotations(
+    mut markdown: String,
+    block: &DocumentBlock,
+    document: &McdDocument,
+    annotations: &IndexMap<String, AnnotationMetadata>,
+) -> String {
+    let path_annotations = annotations
+        .values()
+        .filter(|annotation| path_annotation_matches_block(annotation, block, document))
+        .map(annotation_markdown)
+        .collect::<Vec<_>>();
+    if path_annotations.is_empty() {
+        return markdown;
+    }
+    if !markdown.trim().is_empty() {
+        markdown.push('\n');
+    }
+    markdown.push_str(&path_annotations.join("\n"));
+    markdown
+}
+
+fn path_annotation_matches_block(
+    annotation: &AnnotationMetadata,
+    block: &DocumentBlock,
+    document: &McdDocument,
+) -> bool {
+    let AnnotationTarget::Path { path, source } = &annotation.target else {
+        return false;
+    };
+    if path != &document.source_path {
+        return false;
+    }
+    let Some(annotation_source) = source else {
+        return block_index_is_first(block);
+    };
+    let Some(block_source) = block_source(block) else {
+        return false;
+    };
+    spans_overlap(*annotation_source, block_source)
+}
+
+fn block_index_is_first(block: &DocumentBlock) -> bool {
+    matches!(
+        block
+            .id()
+            .strip_prefix("block-")
+            .and_then(|rest| rest.get(..4)),
+        Some("0001")
+    )
+}
+
+fn block_source(block: &DocumentBlock) -> Option<SourceSpan> {
+    match block {
+        DocumentBlock::Heading { source, .. }
+        | DocumentBlock::Paragraph { source, .. }
+        | DocumentBlock::List { source, .. }
+        | DocumentBlock::CodeBlock { source, .. }
+        | DocumentBlock::Quote { source, .. }
+        | DocumentBlock::MathBlock { source, .. }
+        | DocumentBlock::TableRef { source, .. }
+        | DocumentBlock::ImageRef { source, .. } => *source,
+    }
+}
+
+fn spans_overlap(left: SourceSpan, right: SourceSpan) -> bool {
+    left.start_line <= right.end_line && right.start_line <= left.end_line
+}
+
+fn annotation_markdown(annotation: &AnnotationMetadata) -> String {
+    format!(
+        "(@annotation: [{}])",
+        escape_annotation_text(&annotation.body)
+    )
+}
+
+fn escape_annotation_text(value: &str) -> String {
+    escape_markdown_text(value).replace(']', r"\]")
 }
 
 fn render_table_placement(
@@ -802,6 +991,19 @@ mod tests {
     }
 
     #[test]
+    fn expanded_markdown_embeds_annotation_metadata() {
+        let package = package_with_annotations(
+            "# Revenue\n\nRevenue[[annotation:review-intro]] increased.\n\n:::table\nref: revenue-table\ntable: revenue\nannotations: review-table\n:::\n",
+        );
+
+        let markdown = expanded_markdown_export(&package).expect("expanded markdown");
+
+        assert!(markdown.contains("Revenue(@annotation: [Review the opening copy.]) increased."));
+        assert!(markdown.contains("(@annotation: [Line-level follow-up.])"));
+        assert!(markdown.contains("(@annotation: [Review table totals.])"));
+    }
+
+    #[test]
     fn chart_export_contains_exact_typed_rows_and_view_refs() {
         let package = package_with(
             ":::table\nref: revenue-chart\ntable: revenue\nview: chart\ndisplay: chart\n:::\n",
@@ -870,6 +1072,35 @@ mod tests {
         .expect("package opens")
     }
 
+    fn package_with_annotations(markdown: &str) -> McdPackage {
+        McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", crate::package::MCD_MIMETYPE),
+            ("manifest.json", annotation_manifest()),
+            ("content/main.md", markdown),
+            ("tables/revenue.csv", "quarter,revenue_gbp\nQ1,125000.00\n"),
+            (
+                "tables/revenue.schema.json",
+                r#"{"id":"revenue","columns":[
+                    {"name":"quarter","type":"string","label":"Quarter"},
+                    {"name":"revenue_gbp","type":"decimal","label":"Revenue"}
+                ]}"#,
+            ),
+            (
+                "annotations/review-intro.annotation.json",
+                r#"{"id":"review-intro","target":{"type":"document"},"kind":"comment","status":"open","body":"Review the opening copy."}"#,
+            ),
+            (
+                "annotations/review-line.annotation.json",
+                r#"{"id":"review-line","target":{"type":"path","path":"content/main.md","source":{"startLine":3,"startColumn":1,"endLine":3,"endColumn":1}},"kind":"comment","status":"open","body":"Line-level follow-up."}"#,
+            ),
+            (
+                "annotations/review-table.annotation.json",
+                r#"{"id":"review-table","target":{"type":"placement","ref":"revenue-table"},"kind":"comment","status":"open","body":"Review table totals."}"#,
+            ),
+        ]))
+        .expect("package opens")
+    }
+
     fn manifest() -> &'static str {
         r#"{
             "format":"MCD",
@@ -885,6 +1116,25 @@ mod tests {
                     "chart":"tables/revenue.chart.view.json"
                 }
             }]
+        }"#
+    }
+
+    fn annotation_manifest() -> &'static str {
+        r#"{
+            "format":"MCD",
+            "version":"0.1",
+            "profile":"MCD-Core",
+            "entrypoint":"content/main.md",
+            "tables":[{
+                "id":"revenue",
+                "data":"tables/revenue.csv",
+                "schema":"tables/revenue.schema.json"
+            }],
+            "annotations":[
+                {"id":"review-intro","metadata":"annotations/review-intro.annotation.json"},
+                {"id":"review-line","metadata":"annotations/review-line.annotation.json"},
+                {"id":"review-table","metadata":"annotations/review-table.annotation.json"}
+            ]
         }"#
     }
 

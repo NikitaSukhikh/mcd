@@ -3,22 +3,34 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use mcd_core::{
     McdPackage,
+    annotations::{AnnotationMetadata, AnnotationTarget},
     export::{
-        annotation_export, chart_export, expanded_markdown_export, image_export, json_export,
-        original_markdown_export, table_export,
+        AnnotationExport, annotation_export, chart_export, expanded_markdown_export, image_export,
+        json_export, original_markdown_export, table_export,
     },
 };
+use serde_json::json;
+
+pub enum ExportMode {
+    Annotations,
+}
 
 pub fn run(
     file: &Path,
+    export: Option<ExportMode>,
     json: bool,
     markdown: bool,
     expand_tables: bool,
     tables: bool,
     images: bool,
     annotations: bool,
+    page: Option<&str>,
+    line: Option<usize>,
     charts: bool,
 ) -> Result<()> {
+    let export_annotations = matches!(export, Some(ExportMode::Annotations));
+    let annotations = annotations || export_annotations;
+
     let modes = [json, markdown, tables, images, annotations, charts]
         .into_iter()
         .filter(|enabled| *enabled)
@@ -30,6 +42,12 @@ pub fn run(
     }
     if expand_tables && !markdown {
         bail!("--expand-tables can only be used with --markdown");
+    }
+    if (page.is_some() || line.is_some()) && !annotations {
+        bail!("--page and --line can only be used with annotation export");
+    }
+    if line == Some(0) {
+        bail!("annotation line filter must be 1 or greater");
     }
 
     let package = McdPackage::open_path(file)?;
@@ -65,10 +83,16 @@ pub fn run(
     }
 
     if annotations {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&annotation_export(&package)?)?
-        );
+        let annotations = filtered_annotation_export(annotation_export(&package)?, page, line);
+        let value = if annotations.annotations.is_empty() {
+            json!({
+                "annotations": [],
+                "message": "no annotations found"
+            })
+        } else {
+            serde_json::to_value(&annotations)?
+        };
+        println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
     }
 
@@ -81,4 +105,43 @@ pub fn run(
     }
 
     Ok(())
+}
+
+fn filtered_annotation_export(
+    mut export: AnnotationExport,
+    page: Option<&str>,
+    line: Option<usize>,
+) -> AnnotationExport {
+    if page.is_none() && line.is_none() {
+        return export;
+    }
+
+    export
+        .annotations
+        .retain(|annotation| annotation_matches(annotation, page, line));
+    export
+}
+
+fn annotation_matches(
+    annotation: &AnnotationMetadata,
+    page: Option<&str>,
+    line: Option<usize>,
+) -> bool {
+    let AnnotationTarget::Path { path, source } = &annotation.target else {
+        return false;
+    };
+    if let Some(page) = page
+        && path != page
+    {
+        return false;
+    }
+    if let Some(line) = line {
+        let Some(source) = source else {
+            return false;
+        };
+        if line < source.start_line || line > source.end_line {
+            return false;
+        }
+    }
+    true
 }

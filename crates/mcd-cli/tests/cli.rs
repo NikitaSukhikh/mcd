@@ -95,6 +95,100 @@ fn validate_json_failure_has_stable_shape_and_nonzero_exit() {
 }
 
 #[test]
+fn add_annotation_updates_manifest_and_metadata() {
+    let root = temp_path("add-annotation");
+    fs::create_dir_all(&root).expect("temp root");
+    let package = root.join("annotated.mcd");
+    write_zip(
+        &package,
+        &[
+            ("mimetype", "application/vnd.mcd+zip\n"),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+            ),
+            ("content/main.md", "# Annotated\n\nNeeds review.\n"),
+        ],
+    );
+
+    let add = run(mcd()
+        .arg("add-annotation")
+        .arg(&package)
+        .arg("Check the opening paragraph.")
+        .arg("--page")
+        .arg("content/main.md")
+        .arg("--line")
+        .arg("3")
+        .arg("--id")
+        .arg("review-intro"));
+    assert!(add.status.success(), "{}", stderr(&add));
+    assert_eq!(stdout(&add), "review-intro\n");
+
+    let validate = run(mcd().arg("validate").arg(&package));
+    assert!(validate.status.success(), "{}", stderr(&validate));
+
+    let annotations = run(mcd().arg("extract").arg(&package).arg("--annotations"));
+    assert!(annotations.status.success(), "{}", stderr(&annotations));
+    let annotation_json: serde_json::Value =
+        serde_json::from_str(&stdout(&annotations)).expect("annotation json");
+    assert_eq!(annotation_json["annotations"][0]["id"], "review-intro");
+    assert_eq!(
+        annotation_json["annotations"][0]["body"],
+        "Check the opening paragraph."
+    );
+    assert_eq!(
+        annotation_json["annotations"][0]["target"]["path"],
+        "content/main.md"
+    );
+    assert_eq!(
+        annotation_json["annotations"][0]["target"]["source"]["startLine"],
+        3
+    );
+
+    let filtered = run(mcd()
+        .arg("extract")
+        .arg(&package)
+        .arg("--export")
+        .arg("annotations")
+        .arg("--page")
+        .arg("content/main.md")
+        .arg("--line")
+        .arg("3"));
+    assert!(filtered.status.success(), "{}", stderr(&filtered));
+    let filtered_json: serde_json::Value =
+        serde_json::from_str(&stdout(&filtered)).expect("filtered annotation json");
+    assert_eq!(filtered_json["annotations"][0]["id"], "review-intro");
+
+    let missing = run(mcd()
+        .arg("extract")
+        .arg(&package)
+        .arg("--export")
+        .arg("annotations")
+        .arg("--page")
+        .arg("content/main.md")
+        .arg("--line")
+        .arg("2"));
+    assert!(missing.status.success(), "{}", stderr(&missing));
+    let missing_json: serde_json::Value =
+        serde_json::from_str(&stdout(&missing)).expect("missing annotation json");
+    assert_eq!(missing_json["annotations"].as_array().unwrap().len(), 0);
+    assert_eq!(missing_json["message"], "no annotations found");
+
+    let rendered_markdown = root.join("annotated.md");
+    let render = run(mcd()
+        .arg("render")
+        .arg(&package)
+        .arg("--markdown")
+        .arg("--output")
+        .arg(&rendered_markdown));
+    assert!(render.status.success(), "{}", stderr(&render));
+    let markdown = fs::read_to_string(&rendered_markdown).expect("rendered markdown");
+    assert!(markdown.contains("(@annotation: [Check the opening paragraph.])"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn extract_modes_emit_stdout_and_reject_ambiguous_selection() {
     let revenue = example_package("revenue-report");
     let charts = run(mcd().arg("extract").arg(&revenue).arg("--charts"));
