@@ -105,7 +105,7 @@ enum Command {
         /// Emit Markdown with package tables embedded as plain Markdown tables.
         #[arg(long)]
         markdown: bool,
-        /// Output rendered file path.
+        /// Output rendered file path, or a directory for HTML project output.
         #[arg(long)]
         output: PathBuf,
     },

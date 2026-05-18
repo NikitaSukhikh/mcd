@@ -16,11 +16,71 @@ use mcd_core::{
 };
 use serde_json::Value;
 
+/// Directory-style HTML render output.
+#[derive(Debug, Clone)]
+pub struct HtmlRender {
+    /// HTML document for `index.html`.
+    pub index_html: String,
+    /// Stylesheet content for `styles.css`.
+    pub styles_css: String,
+    /// Asset files to write under the render output directory.
+    pub assets: Vec<HtmlRenderAsset>,
+}
+
+/// Asset emitted by a directory-style HTML render.
+#[derive(Debug, Clone)]
+pub struct HtmlRenderAsset {
+    /// Relative asset path, such as `assets/logo.svg`.
+    pub path: String,
+    /// Asset bytes.
+    pub bytes: Vec<u8>,
+}
+
 /// Render a validated MCD package to standalone semantic HTML.
 pub fn render_html(package: &McdPackage) -> mcd_core::Result<String> {
-    validate_package(package)?;
+    render_html_document(package, HtmlOutput::Standalone).map(|rendered| rendered.html)
+}
 
-    let manifest = package.manifest()?;
+/// Render a validated MCD package to `index.html`, `styles.css`, and local assets.
+pub fn render_html_project(package: &McdPackage) -> mcd_core::Result<HtmlRender> {
+    let manifest = validate_and_load_manifest(package)?;
+    let images = mcd_core::images::load_manifest_images(package, &manifest)?;
+    let mut image_sources = IndexMap::new();
+    let mut assets = Vec::new();
+
+    for image in images.values() {
+        let path = format!("assets/{}", asset_filename(&image.id, &image.asset));
+        image_sources.insert(image.id.clone(), path.clone());
+        assets.push(HtmlRenderAsset {
+            path,
+            bytes: package.read(&image.asset)?.to_vec(),
+        });
+    }
+
+    let rendered = render_html_document(
+        package,
+        HtmlOutput::Project {
+            image_sources: &image_sources,
+        },
+    )?;
+
+    Ok(HtmlRender {
+        index_html: rendered.html,
+        styles_css: rendered.css,
+        assets,
+    })
+}
+
+fn validate_and_load_manifest(package: &McdPackage) -> mcd_core::Result<Manifest> {
+    validate_package(package)?;
+    package.manifest()
+}
+
+fn render_html_document(
+    package: &McdPackage,
+    output: HtmlOutput<'_>,
+) -> mcd_core::Result<RenderedHtml> {
+    let manifest = validate_and_load_manifest(package)?;
     let document = McdDocument::from_package(package, &manifest)?;
     let tables = load_manifest_tables(package, &manifest)?;
     let views = load_manifest_table_views(package, &manifest)?;
@@ -28,18 +88,19 @@ pub fn render_html(package: &McdPackage) -> mcd_core::Result<String> {
     let annotations = load_manifest_annotations(package, &manifest, &document)?;
     let annotation_index = RenderAnnotationIndex::from_document(&document, &annotations);
     let styles = Styles::from_manifest(package, &manifest)?;
+    let context = RenderContext {
+        package,
+        tables: &tables,
+        views: &views,
+        images: &images,
+        annotations: &annotation_index,
+        styles: &styles,
+        image_sources: output.image_sources(),
+    };
 
     let mut body = String::new();
     for block in &document.blocks {
-        body.push_str(&render_block(
-            package,
-            block,
-            &tables,
-            &views,
-            &images,
-            &annotation_index,
-            &styles,
-        )?);
+        body.push_str(&render_block(block, &context)?);
         body.push('\n');
     }
     body.push_str(&render_annotation_endnotes(&annotation_index));
@@ -50,13 +111,56 @@ pub fn render_html(package: &McdPackage) -> mcd_core::Result<String> {
         .or_else(|| document_title(&document))
         .unwrap_or_else(|| "MCD document".to_owned());
 
-    Ok(format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n<style>\n{}\n</style>\n</head>\n<body>\n<main class=\"mcd-document\" data-mcd-entrypoint=\"{}\">\n{}</main>\n</body>\n</html>\n",
-        escape_html(&title),
-        styles.css(),
-        escape_attr(&document.source_path),
-        body.trim_end()
-    ))
+    let css = styles.css();
+    let stylesheet = match output {
+        HtmlOutput::Standalone => format!("<style>\n{css}\n</style>"),
+        HtmlOutput::Project { .. } => "<link rel=\"stylesheet\" href=\"styles.css\">".to_owned(),
+    };
+
+    Ok(RenderedHtml {
+        html: format!(
+            "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{}</title>\n{}\n</head>\n<body>\n<main class=\"mcd-document\" data-mcd-entrypoint=\"{}\">\n{}</main>\n</body>\n</html>\n",
+            escape_html(&title),
+            stylesheet,
+            escape_attr(&document.source_path),
+            body.trim_end()
+        ),
+        css,
+    })
+}
+
+#[derive(Debug)]
+struct RenderedHtml {
+    html: String,
+    css: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HtmlOutput<'a> {
+    Standalone,
+    Project {
+        image_sources: &'a IndexMap<String, String>,
+    },
+}
+
+impl<'a> HtmlOutput<'a> {
+    fn image_sources(self) -> Option<&'a IndexMap<String, String>> {
+        match self {
+            Self::Standalone => None,
+            Self::Project { image_sources } => Some(image_sources),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RenderContext<'a> {
+    package: &'a McdPackage,
+    tables: &'a IndexMap<String, DataTable>,
+    views: &'a IndexMap<String, IndexMap<String, TableView>>,
+    images: &'a IndexMap<String, ImageMetadata>,
+    annotations: &'a RenderAnnotationIndex,
+    styles: &'a Styles,
+    image_sources: Option<&'a IndexMap<String, String>>,
 }
 
 fn document_title(document: &McdDocument) -> Option<String> {
@@ -66,15 +170,7 @@ fn document_title(document: &McdDocument) -> Option<String> {
     })
 }
 
-fn render_block(
-    package: &McdPackage,
-    block: &DocumentBlock,
-    tables: &IndexMap<String, DataTable>,
-    views: &IndexMap<String, IndexMap<String, TableView>>,
-    images: &IndexMap<String, ImageMetadata>,
-    annotations: &RenderAnnotationIndex,
-    styles: &Styles,
-) -> mcd_core::Result<String> {
+fn render_block(block: &DocumentBlock, context: &RenderContext<'_>) -> mcd_core::Result<String> {
     match block {
         DocumentBlock::Heading {
             id,
@@ -87,7 +183,7 @@ fn render_block(
             Ok(format!(
                 "<h{level}{}>{}</h{level}>",
                 source_attrs(id, *source),
-                render_annotated_text(text, refs, annotations)
+                render_annotated_text(text, refs, context.annotations)
             ))
         }
         DocumentBlock::Paragraph {
@@ -98,7 +194,7 @@ fn render_block(
         } => Ok(format!(
             "<p{}>{}</p>",
             source_attrs(id, *source),
-            render_annotated_text(text, refs, annotations)
+            render_annotated_text(text, refs, context.annotations)
         )),
         DocumentBlock::List {
             id,
@@ -111,7 +207,7 @@ fn render_block(
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| format!("<li>{}</li>", escape_html(line.trim())))
                 .collect::<String>()
-                + &render_block_annotation_markers(refs, annotations);
+                + &render_block_annotation_markers(refs, context.annotations);
             Ok(format!("<ul{}>{items}</ul>", source_attrs(id, *source)))
         }
         DocumentBlock::CodeBlock {
@@ -143,7 +239,7 @@ fn render_block(
             text.lines()
                 .map(|line| format!("<p>{}</p>", escape_html(line.trim())))
                 .collect::<String>()
-                + &render_block_annotation_markers(refs, annotations)
+                + &render_block_annotation_markers(refs, context.annotations)
         )),
         DocumentBlock::MathBlock { id, text, source } => Ok(format!(
             "<pre{} class=\"mcd-math\"><code>{}</code></pre>",
@@ -154,12 +250,28 @@ fn render_block(
             id,
             placement,
             source,
-        } => render_table_or_chart(id, *source, placement, tables, views, annotations, styles),
+        } => render_table_or_chart(
+            id,
+            *source,
+            placement,
+            context.tables,
+            context.views,
+            context.annotations,
+            context.styles,
+        ),
         DocumentBlock::ImageRef {
             id,
             placement,
             source,
-        } => render_image(package, id, *source, placement, images, annotations),
+        } => render_image(
+            context.package,
+            id,
+            *source,
+            placement,
+            context.images,
+            context.annotations,
+            context.image_sources,
+        ),
     }
 }
 
@@ -262,6 +374,7 @@ fn render_image(
     placement: &ImagePlacement,
     images: &IndexMap<String, ImageMetadata>,
     annotations: &RenderAnnotationIndex,
+    image_sources: Option<&IndexMap<String, String>>,
 ) -> mcd_core::Result<String> {
     let image = resolve_image_placement(placement, images).ok_or_else(|| {
         render_error(
@@ -269,12 +382,21 @@ fn render_image(
             "Image placement does not resolve to metadata.",
         )
     })?;
-    let bytes = package.read(&image.asset)?;
-    let src = format!(
-        "data:{};base64,{}",
-        image.media_type,
-        STANDARD.encode(bytes)
-    );
+    let src = if let Some(image_sources) = image_sources {
+        image_sources.get(&image.id).cloned().ok_or_else(|| {
+            render_error(
+                "render.image.asset.missing",
+                format!("Image '{}' does not have a render asset.", image.id),
+            )
+        })?
+    } else {
+        let bytes = package.read(&image.asset)?;
+        format!(
+            "data:{};base64,{}",
+            image.media_type,
+            STANDARD.encode(bytes)
+        )
+    };
     let alt = placement
         .alt
         .as_deref()
@@ -981,6 +1103,23 @@ max-width: 880px;
 margin: 0 auto;
 padding: 32px 24px;
 }
+@page {
+size: A4;
+margin: 20mm 18mm;
+}
+@media print {
+body {
+background: #ffffff;
+}
+.mcd-document {
+max-width: none;
+padding: 0;
+}
+figure {
+break-inside: avoid;
+page-break-inside: avoid;
+}
+}
 [data-mcd-source-id] {
 scroll-margin-top: 24px;
 }
@@ -1134,6 +1273,36 @@ fn sanitize_css_value(value: &str) -> String {
 }
 
 fn css_ident(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn asset_filename(id: &str, package_path: &str) -> String {
+    let basename = package_path.rsplit('/').next().unwrap_or(package_path);
+    let extension = basename
+        .rsplit_once('.')
+        .map(|(_, extension)| sanitize_filename(extension))
+        .filter(|extension| !extension.is_empty());
+    let mut filename = sanitize_filename(id);
+    if filename.is_empty() {
+        filename.push_str("asset");
+    }
+    if let Some(extension) = extension {
+        filename.push('.');
+        filename.push_str(&extension);
+    }
+    filename
+}
+
+fn sanitize_filename(value: &str) -> String {
     value
         .chars()
         .map(|ch| {

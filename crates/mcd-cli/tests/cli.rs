@@ -271,6 +271,34 @@ fn render_html_writes_standalone_output() {
 }
 
 #[test]
+fn render_html_writes_project_directory() {
+    let root = temp_path("render-html-project");
+    fs::create_dir_all(&root).expect("temp root");
+    let output_path = root.join("render");
+
+    let render = run(mcd()
+        .arg("render")
+        .arg(example_package("visual-report"))
+        .arg("--html")
+        .arg("--output")
+        .arg(&output_path));
+
+    assert!(render.status.success(), "{}", stderr(&render));
+    assert!(stdout(&render).is_empty());
+    assert!(stderr(&render).is_empty());
+
+    let html = fs::read_to_string(output_path.join("index.html")).expect("index html");
+    let css = fs::read_to_string(output_path.join("styles.css")).expect("styles css");
+    assert!(html.contains("<!doctype html>"));
+    assert!(html.contains("<link rel=\"stylesheet\" href=\"styles.css\">"));
+    assert!(html.contains("src=\"assets/process-diagram.svg\""));
+    assert!(css.contains("@page"));
+    assert!(output_path.join("assets/process-diagram.svg").is_file());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn render_markdown_writes_plain_projection_with_embedded_tables() {
     let root = temp_path("render-markdown");
     fs::create_dir_all(&root).expect("temp root");
