@@ -637,7 +637,22 @@ Acceptance criteria:
 - External SVG resource fixture fails.
 - Image-only table fixture fails under MCD-Strict.
 
-## Phase 4: Exports
+## Phase 4: Exports - Completed 2026-05-18
+
+Status:
+
+- [x] `mcd_core::document` implemented.
+- [x] `mcd_core::export` implemented.
+- [x] Canonical JSON document stream export implemented with tables, views, images, and chart placements.
+- [x] Original Markdown export implemented.
+- [x] Expanded Markdown export implemented with resolved table views.
+- [x] Expanded Markdown export for chart placements implemented as chart metadata plus source-data tables.
+- [x] Image metadata export implemented without embedding binary assets.
+- [x] Chart metadata export implemented with exact source table and view references.
+- [x] Table extraction export implemented.
+- [x] Schema summary export API implemented.
+- [x] Agent context JSON export API implemented.
+- [x] `mcd extract` supports `--json`, `--markdown`, `--markdown --expand-tables`, `--tables`, `--images`, and `--charts`.
 
 Implement:
 

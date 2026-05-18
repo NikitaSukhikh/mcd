@@ -52,6 +52,9 @@ enum Command {
         /// Emit image metadata.
         #[arg(long)]
         images: bool,
+        /// Emit chart metadata and source data.
+        #[arg(long)]
+        charts: bool,
     },
     /// Pack an unpacked directory into an MCD package.
     Pack {
@@ -95,7 +98,8 @@ fn main() -> Result<()> {
             expand_tables,
             tables,
             images,
-        } => commands::extract::run(&file, json, markdown, expand_tables, tables, images),
+            charts,
+        } => commands::extract::run(&file, json, markdown, expand_tables, tables, images, charts),
         Command::Pack { directory, output } => commands::pack::run(&directory, &output),
         Command::Unpack { file, output } => commands::unpack::run(&file, &output),
         Command::Init { directory } => commands::init::run(&directory),

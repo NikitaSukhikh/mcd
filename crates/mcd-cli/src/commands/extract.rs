@@ -3,7 +3,10 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use mcd_core::{
     McdPackage,
-    export::{image_export, json_export, table_export},
+    export::{
+        chart_export, expanded_markdown_export, image_export, json_export,
+        original_markdown_export, table_export,
+    },
 };
 
 pub fn run(
@@ -13,9 +16,9 @@ pub fn run(
     expand_tables: bool,
     tables: bool,
     images: bool,
+    charts: bool,
 ) -> Result<()> {
     let package = McdPackage::open_path(file)?;
-    let manifest = package.manifest()?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&json_export(&package)?)?);
@@ -24,9 +27,10 @@ pub fn run(
 
     if markdown {
         if expand_tables {
-            bail!("expanded Markdown export is not implemented yet");
+            println!("{}", expanded_markdown_export(&package)?);
+            return Ok(());
         }
-        println!("{}", package.read_to_string(&manifest.entrypoint)?);
+        println!("{}", original_markdown_export(&package)?);
         return Ok(());
     }
 
@@ -46,5 +50,13 @@ pub fn run(
         return Ok(());
     }
 
-    bail!("choose one extraction mode: --json, --markdown, --tables, or --images");
+    if charts {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&chart_export(&package)?)?
+        );
+        return Ok(());
+    }
+
+    bail!("choose one extraction mode: --json, --markdown, --tables, --images, or --charts");
 }
