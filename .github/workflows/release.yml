@@ -63,6 +63,7 @@ jobs:
           cache: npm
           cache-dependency-path: bindings/typescript/package-lock.json
           registry-url: "https://registry.npmjs.org"
+      - run: rustup target add wasm32-unknown-unknown
       - run: npm ci
         working-directory: bindings/typescript
       - run: npm test
