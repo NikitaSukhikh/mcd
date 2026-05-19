@@ -1,4 +1,10 @@
-import { openMcd, type Diagnostic, type ValidationResult } from "@mcd/parser";
+import {
+  openMcd,
+  type Diagnostic,
+  type DocumentBlock,
+  type SourceSpan,
+  type ValidationResult,
+} from "@mcd/parser";
 import DOMPurify from "dompurify";
 import JSZip from "jszip";
 import katex from "katex";
@@ -9,6 +15,7 @@ import "katex/dist/katex.min.css";
 import "./styles.css";
 
 const MCD_MIMETYPE = "application/vnd.mcd+zip";
+const UNSAVED_CHANGES_PROMPT = "Save changes?";
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -142,16 +149,57 @@ interface TableSchema {
   columns: TableColumn[];
 }
 
+interface TableViewColumn {
+  name: string;
+  label?: string;
+  format?: string;
+  currency?: string;
+  unit?: string;
+  percent?: boolean;
+}
+
+interface TableChartEncoding {
+  column: string;
+  label?: string;
+  format?: string;
+  currency?: string;
+  unit?: string;
+  percent?: boolean;
+}
+
+interface TableView {
+  id: string;
+  table: string;
+  display?: "table" | "chart";
+  columns?: TableViewColumn[];
+  chart?: {
+    x?: TableChartEncoding;
+    y?: TableChartEncoding;
+    series?: TableChartEncoding;
+    grouping?: TableChartEncoding;
+    markLabels?: Partial<TableChartEncoding> & { show?: boolean };
+  };
+}
+
 interface EditableTable {
   manifest: TableManifestEntry;
   schema: TableSchema;
+  views: Record<string, TableView>;
   rows: Record<string, string>[];
+}
+
+interface TablePlacement {
+  table: string;
+  view?: string;
+  display: "table" | "chart";
 }
 
 interface EditableAnnotation {
   id: string;
   metadata: string;
   targetText: string;
+  page: string;
+  line: string;
   kind: string;
   status: string;
   body: string;
@@ -159,6 +207,14 @@ interface EditableAnnotation {
   labels: string;
   created: string;
   originalMetadata?: string;
+}
+
+interface AnnotationPreviewItem {
+  id: string;
+  number: number;
+  annotation: EditableAnnotation;
+  line: number;
+  hasInlineMarker: boolean;
 }
 
 interface PackageState {
@@ -194,6 +250,8 @@ let state: PackageState | undefined;
 let activeTab: ActiveTab = "text";
 let renderTimer: number | undefined;
 let assetUrls: string[] = [];
+let expandedAnnotationIds = new Set<string>();
+let locallySavedAnnotationIds = new Set<string>();
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -204,14 +262,14 @@ app.innerHTML = `
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">M</span>
+        <img class="brand-logo" src="/MCD_logo_tight.png" alt="MCD" />
         <div>
           <div class="brand-title">MCD Viewer</div>
           <div class="file-name" id="fileName">No document loaded</div>
         </div>
       </div>
       <div class="toolbar">
-        <button id="openButton" type="button">Open</button>
+        <button id="openButton" type="button">Upload</button>
         <button id="validateButton" type="button" disabled>Validate</button>
         <button id="saveButton" class="primary" type="button" disabled>Save .mcd</button>
       </div>
@@ -219,10 +277,6 @@ app.innerHTML = `
     <main class="workspace">
       <section class="editor-pane">
         <input id="fileInput" class="hidden-input" type="file" accept=".mcd,application/zip,application/vnd.mcd+zip,text/markdown,text/plain" />
-        <div id="dropZone" class="drop-zone">
-          <div class="drop-title">Drop a .mcd file here</div>
-          <div class="drop-copy">The file is parsed locally in this browser session.</div>
-        </div>
         <div class="status-panel">
           <div class="status-line" id="statusLine">Open a document to edit Markdown, annotations, and CSV-backed tables.</div>
           <div class="diagnostics" id="diagnostics"></div>
@@ -250,7 +304,7 @@ app.innerHTML = `
       </section>
       <section class="preview-pane">
         <article class="preview-document" id="preview">
-          <div class="empty-state">Preview appears after opening a document.</div>
+          ${emptyDropZoneHtml()}
         </article>
       </section>
     </main>
@@ -262,7 +316,6 @@ const fileInput = byId<HTMLInputElement>("fileInput");
 const openButton = byId<HTMLButtonElement>("openButton");
 const validateButton = byId<HTMLButtonElement>("validateButton");
 const saveButton = byId<HTMLButtonElement>("saveButton");
-const dropZone = byId<HTMLDivElement>("dropZone");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
 const markdownEditor = byId<HTMLTextAreaElement>("markdownEditor");
@@ -288,22 +341,77 @@ saveButton.addEventListener("click", () => {
   void saveDocument();
 });
 
-dropZone.addEventListener("dragover", (event) => {
+window.addEventListener("beforeunload", (event) => {
+  if (!state?.dirty) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = UNSAVED_CHANGES_PROMPT;
+});
+
+preview.addEventListener("dragover", (event: DragEvent) => {
+  const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
+  if (!dropZone) return;
   event.preventDefault();
   dropZone.classList.add("is-active");
 });
 
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("is-active");
+preview.addEventListener("dragleave", (event: DragEvent) => {
+  const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
+  if (!dropZone) return;
+  if (!preview.contains(event.relatedTarget as Node)) {
+    dropZone.classList.remove("is-active");
+  }
 });
 
-dropZone.addEventListener("drop", (event) => {
+preview.addEventListener("drop", (event: DragEvent) => {
+  const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
+  if (!dropZone) return;
   event.preventDefault();
   dropZone.classList.remove("is-active");
   const file = event.dataTransfer?.files[0];
   if (file) {
     void loadFile(file);
   }
+});
+
+preview.addEventListener("click", (event) => {
+  const dropZone = (event.target as Element | null)?.closest<HTMLDivElement>("#dropZone");
+  if (dropZone && preview.contains(dropZone)) {
+    fileInput.click();
+    return;
+  }
+
+  const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(
+    'a[href^="#mcd-annotation"]',
+  );
+  if (!link) {
+    return;
+  }
+  const targetId = link.getAttribute("href")?.slice(1);
+  if (!targetId) {
+    return;
+  }
+  const target = document.getElementById(targetId);
+  if (!target || !preview.contains(target)) {
+    return;
+  }
+  event.preventDefault();
+  target.setAttribute("tabindex", "-1");
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.focus({ preventScroll: true });
+});
+
+preview.addEventListener("keydown", (event: KeyboardEvent) => {
+  const dropZone = (event.target as Element | null)?.closest<HTMLDivElement>("#dropZone");
+  if (!dropZone || !preview.contains(dropZone)) {
+    return;
+  }
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  fileInput.click();
 });
 
 markdownEditor.addEventListener("input", () => {
@@ -328,7 +436,9 @@ addAnnotationButton.addEventListener("click", () => {
   state.annotations.push({
     id,
     metadata: `annotations/${id}.annotation.json`,
-    targetText: JSON.stringify({ type: "document" }, null, 2),
+    targetText: JSON.stringify(sourceLineTarget(state.manifest.entrypoint, 1), null, 2),
+    page: firstPageValue(state),
+    line: "1",
     kind: "comment",
     status: "open",
     body: "New annotation",
@@ -336,6 +446,7 @@ addAnnotationButton.addEventListener("click", () => {
     labels: "",
     created: new Date().toISOString(),
   });
+  expandedAnnotationIds.add(id);
   renderAnnotationsEditor();
   markDirty();
 });
@@ -354,10 +465,14 @@ async function loadFile(file: File): Promise<void> {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     state = await loadPackage(file.name, bytes);
+    expandedAnnotationIds = new Set();
+    locallySavedAnnotationIds = new Set();
     hydrateUiFromState();
     await renderAndValidate();
   } catch (error) {
     state = undefined;
+    expandedAnnotationIds = new Set();
+    locallySavedAnnotationIds = new Set();
     hydrateUiFromState();
     showError(error);
   }
@@ -392,8 +507,14 @@ async function loadPackage(fileName: string, bytes: Uint8Array): Promise<Package
   const manifest = await readManifest(zip);
   const markdown = await readText(zip, manifest.entrypoint);
   const tables = await readTables(zip, manifest.tables ?? []);
-  const annotations = await readAnnotations(zip, manifest.annotations ?? []);
   const { pageMap, pageMapPath } = await readPageMap(zip, manifest);
+  const annotations = await readAnnotations(
+    zip,
+    manifest.annotations ?? [],
+    manifest.entrypoint,
+    markdown,
+    pageMap,
+  );
 
   return {
     fileName,
@@ -426,23 +547,51 @@ async function readTables(
     tables.push({
       manifest: entry,
       schema,
+      views: await readTableViews(zip, entry),
       rows: parseCsvRows(csv, schema.columns),
     });
   }
   return tables;
 }
 
+async function readTableViews(
+  zip: JSZip,
+  entry: TableManifestEntry,
+): Promise<Record<string, TableView>> {
+  const views: Record<string, TableView> = {};
+  for (const [id, path] of Object.entries(entry.views ?? {})) {
+    const file = zip.file(path);
+    if (!file) {
+      continue;
+    }
+    const view = JSON.parse(await file.async("string")) as TableView;
+    views[id] = view;
+  }
+  return views;
+}
+
 async function readAnnotations(
   zip: JSZip,
   entries: AnnotationManifestEntry[],
+  entrypoint: string,
+  markdown: string,
+  pageMap?: PageMap,
 ): Promise<EditableAnnotation[]> {
   const annotations: EditableAnnotation[] = [];
   for (const entry of entries) {
     const raw = JSON.parse(await readText(zip, entry.metadata)) as Record<string, unknown>;
+    const target = targetRecord(raw.target);
+    const line = targetSourceLine(target, entrypoint) ?? annotationMarkerLine(markdown, entry.id);
+    const targetText =
+      line && target?.type === "path" && target.path === entrypoint
+        ? JSON.stringify(sourceLineTarget(entrypoint, line), null, 2)
+        : JSON.stringify(target ?? { type: "document" }, null, 2);
     annotations.push({
       id: String(raw.id ?? entry.id),
       metadata: entry.metadata,
-      targetText: JSON.stringify(raw.target ?? { type: "document" }, null, 2),
+      targetText,
+      page: line ? inferPageForLine(markdown, line, pageMap) : "",
+      line: line?.toString() ?? "",
       kind: String(raw.kind ?? "comment"),
       status: String(raw.status ?? "open"),
       body: String(raw.body ?? ""),
@@ -453,6 +602,128 @@ async function readAnnotations(
     });
   }
   return annotations;
+}
+
+function annotationMarkerLine(markdown: string, id: string): number | undefined {
+  const marker = `[[annotation:${id}]]`;
+  const lines = markdown.split(/\r\n|\r|\n/);
+  const index = lines.findIndex((line) => line.includes(marker));
+  return index >= 0 ? index + 1 : undefined;
+}
+
+function targetRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function targetSourceLine(target: Record<string, unknown> | undefined, entrypoint: string): number | undefined {
+  if (!target || target.type !== "path" || target.path !== entrypoint) {
+    return undefined;
+  }
+  const source = targetRecord(target.source);
+  const line = Number(source?.startLine);
+  return Number.isInteger(line) && line > 0 ? line : undefined;
+}
+
+function sourceLineTarget(path: string, line: number): Record<string, unknown> {
+  return {
+    type: "path",
+    path,
+    source: {
+      startLine: line,
+      startColumn: 1,
+      endLine: line,
+      endColumn: 1,
+    },
+  };
+}
+
+function markdownLineCount(markdown: string): number {
+  return Math.max(1, markdown.split(/\r\n|\r|\n/).length);
+}
+
+function firstPageValue(packageState: PackageState): string {
+  return String(pageChoices(packageState)[0]?.number ?? 1);
+}
+
+function pageChoices(packageState: PackageState): Array<{ number: number; label: string }> {
+  const pages = (packageState.pageMap?.pages ?? []).filter(
+    (page) => page.label?.toLowerCase() !== "annotations",
+  );
+  if (pages.length > 0) {
+    return pages.map((page) => ({
+      number: page.number,
+      label: page.label ?? `Page ${page.number}`,
+    }));
+  }
+  return [{ number: 1, label: "Page 1" }];
+}
+
+function annotationPageOptions(selected: string): string {
+  if (!state) {
+    return options(["1"], selected || "1");
+  }
+  return pageChoices(state)
+    .map((page) => {
+      const value = String(page.number);
+      const selectedAttr = value === selected ? " selected" : "";
+      return `<option value="${escapeAttr(value)}"${selectedAttr}>${escapeHtml(page.label)}</option>`;
+    })
+    .join("");
+}
+
+function normalizeLineInput(value: string, markdown: string): string {
+  const line = Number(value);
+  if (!Number.isInteger(line) || line < 1) {
+    return "";
+  }
+  return String(Math.min(line, markdownLineCount(markdown)));
+}
+
+function inferPageForLine(markdown: string, line: number, pageMap?: PageMap): string {
+  const starts = pageStartLines(markdown, pageMap);
+  const match = starts
+    .filter((start) => start.line <= line)
+    .sort((left, right) => right.line - left.line)[0];
+  if (match) {
+    return String(match.page);
+  }
+
+  const pageCount = Math.max(1, pageMap?.pages.length ?? 1);
+  const approximate = Math.ceil((line / markdownLineCount(markdown)) * pageCount);
+  return String(Math.min(Math.max(1, approximate), pageCount));
+}
+
+function firstLineForPage(markdown: string, page: number, pageMap?: PageMap): number {
+  const start = pageStartLines(markdown, pageMap).find((entry) => entry.page === page);
+  if (start) {
+    return start.line;
+  }
+
+  const pageCount = Math.max(1, pageMap?.pages.length ?? 1);
+  const lineCount = markdownLineCount(markdown);
+  return Math.max(1, Math.floor(((page - 1) / pageCount) * lineCount) + 1);
+}
+
+function pageStartLines(markdown: string, pageMap?: PageMap): Array<{ page: number; line: number }> {
+  const lines = markdown.split(/\r\n|\r|\n/);
+  const pageNumbers = (pageMap?.pages ?? [{ number: 1 }]).map((page) => page.number);
+  const starts: Array<{ page: number; line: number }> = [];
+
+  for (const page of pageNumbers) {
+    const headingPattern = new RegExp(`^#{1,6}\\s+Page\\s+0?${page}(?:\\b|:)`, "i");
+    const headingIndex = lines.findIndex((line) => headingPattern.test(line.trim()));
+    if (headingIndex >= 0) {
+      starts.push({ page, line: headingIndex + 1 });
+    }
+  }
+
+  if (starts.length > 0) {
+    return starts.sort((left, right) => left.line - right.line);
+  }
+
+  return [{ page: pageNumbers[0] ?? 1, line: 1 }];
 }
 
 async function readPageMap(
@@ -512,8 +783,15 @@ function hydrateUiFromState(): void {
   renderAnnotationsEditor();
   if (!state) {
     setStatus("Open a document to edit Markdown, annotations, and CSV-backed tables.");
-    preview.innerHTML = `<div class="empty-state">Preview appears after opening a document.</div>`;
+    preview.innerHTML = emptyDropZoneHtml();
   }
+}
+
+function emptyDropZoneHtml(): string {
+  return `<div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Upload or drop an MCD file">
+    <div class="drop-title">Click to upload or drop a .mcd file here</div>
+    <div class="drop-copy">The file is parsed locally in this browser session.</div>
+  </div>`;
 }
 
 function setActiveTab(tab: ActiveTab): void {
@@ -630,13 +908,137 @@ function renderAnnotationsEditor(): void {
     return;
   }
 
+  const packageState = state;
   state.annotations.forEach((annotation, index) => {
+    const expanded = expandedAnnotationIds.has(annotation.id);
+    const panelId = `annotation-panel-${index}-${sanitizeId(annotation.id)}`;
     const card = document.createElement("section");
-    card.className = "item-card";
+    card.className = `item-card annotation-card${expanded ? " is-expanded" : ""}`;
     card.innerHTML = `
       <div class="item-header">
-        <div class="item-title">${escapeHtml(annotation.id)}</div>
-        <button class="danger" type="button" data-field="remove">Remove</button>
+        <button class="annotation-summary" type="button" data-field="toggle" aria-expanded="${expanded}" aria-controls="${escapeAttr(
+          panelId,
+        )}">
+          <span class="item-title">${escapeHtml(annotation.id)}</span>
+        </button>
+        <div class="item-actions">
+          <button class="disclosure-button" type="button" data-field="toggle" aria-label="${
+            expanded ? "Collapse annotation" : "Expand annotation"
+          }" aria-expanded="${expanded}" aria-controls="${escapeAttr(panelId)}">
+            <span class="disclosure-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      ${expanded ? annotationDetailsHtml(annotation, packageState, panelId) : ""}
+    `;
+
+    bindAnnotationInput(card, annotation, "id", (value) => {
+      const previousId = annotation.id;
+      const previous = annotation.metadata;
+      annotation.id = sanitizeId(value);
+      annotation.metadata = `annotations/${annotation.id}.annotation.json`;
+      if (previous !== annotation.metadata) {
+        state?.removedAnnotationPaths.add(previous);
+      }
+      if (expandedAnnotationIds.delete(previousId)) {
+        expandedAnnotationIds.add(annotation.id);
+      }
+      if (locallySavedAnnotationIds.delete(previousId)) {
+        locallySavedAnnotationIds.add(annotation.id);
+      }
+    });
+    bindAnnotationInput(card, annotation, "kind", (value) => {
+      annotation.kind = value;
+    });
+    bindAnnotationInput(card, annotation, "status", (value) => {
+      annotation.status = value;
+    });
+    bindAnnotationInput(card, annotation, "author", (value) => {
+      annotation.author = value;
+    });
+    bindAnnotationInput(card, annotation, "body", (value) => {
+      annotation.body = value;
+    });
+    bindAnnotationInput(card, annotation, "page", (value) => {
+      annotation.page = value;
+      if (state && value) {
+        annotation.line = firstLineForPage(state.markdown, Number(value), state.pageMap).toString();
+        const lineInput = card.querySelector<HTMLInputElement>('[data-field="line"]');
+        if (lineInput) {
+          lineInput.value = annotation.line;
+        }
+      }
+      updateAnnotationTargetFromLocation(annotation);
+      updateAnnotationTargetTextarea(card, annotation);
+    });
+    bindAnnotationInput(card, annotation, "line", (value) => {
+      annotation.line = normalizeLineInput(value, state?.markdown ?? "");
+      if (state && annotation.line) {
+        annotation.page = inferPageForLine(state.markdown, Number(annotation.line), state.pageMap);
+        const pageInput = card.querySelector<HTMLSelectElement>('[data-field="page"]');
+        if (pageInput) {
+          pageInput.value = annotation.page;
+        }
+      }
+      updateAnnotationTargetFromLocation(annotation);
+      updateAnnotationTargetTextarea(card, annotation);
+    });
+    bindAnnotationInput(card, annotation, "targetText", (value) => {
+      annotation.targetText = value;
+      syncAnnotationLocationFromTarget(annotation);
+      updateAnnotationLocationInputs(card, annotation);
+    });
+    bindAnnotationInput(card, annotation, "labels", (value) => {
+      annotation.labels = value;
+    });
+    bindAnnotationInput(card, annotation, "created", (value) => {
+      annotation.created = value;
+    });
+    card
+      .querySelector<HTMLButtonElement>('[data-field="save"]')
+      ?.addEventListener("click", () => {
+        void saveAnnotationLocally(annotation);
+      });
+    for (const toggle of Array.from(
+      card.querySelectorAll<HTMLButtonElement>('[data-field="toggle"]'),
+    )) {
+      toggle.addEventListener("click", () => {
+        if (expandedAnnotationIds.has(annotation.id)) {
+          expandedAnnotationIds.delete(annotation.id);
+          locallySavedAnnotationIds.delete(annotation.id);
+        } else {
+          expandedAnnotationIds.add(annotation.id);
+        }
+        renderAnnotationsEditor();
+      });
+    }
+    card
+      .querySelector<HTMLButtonElement>('[data-field="remove"]')
+      ?.addEventListener("click", () => {
+        state?.removedAnnotationPaths.add(annotation.metadata);
+        if (annotation.originalMetadata) {
+          state?.removedAnnotationPaths.add(annotation.originalMetadata);
+        }
+        expandedAnnotationIds.delete(annotation.id);
+        locallySavedAnnotationIds.delete(annotation.id);
+        state?.annotations.splice(index, 1);
+        renderAnnotationsEditor();
+        markDirty();
+      });
+    annotationsEditor.appendChild(card);
+  });
+}
+
+function annotationDetailsHtml(
+  annotation: EditableAnnotation,
+  packageState: PackageState,
+  panelId: string,
+): string {
+  return `
+    <div class="annotation-details" id="${escapeAttr(panelId)}">
+      <div class="annotation-detail-actions">
+        ${annotationSaveButtonHtml(annotation)}
+        <button class="danger" type="button" data-field="remove">Delete</button>
       </div>
       <div class="compact-row">
         <div class="field">
@@ -666,6 +1068,20 @@ function renderAnnotationsEditor(): void {
         <label>Body</label>
         <textarea data-field="body">${escapeHtml(annotation.body)}</textarea>
       </div>
+      <div class="compact-row">
+        <div class="field">
+          <label>Page</label>
+          <select data-field="page">
+            ${annotationPageOptions(annotation.page)}
+          </select>
+        </div>
+        <div class="field">
+          <label>Line</label>
+          <input data-field="line" type="number" min="1" max="${markdownLineCount(
+            packageState.markdown,
+          )}" value="${escapeAttr(annotation.line)}" />
+        </div>
+      </div>
       <div class="field">
         <label>Target JSON</label>
         <textarea data-field="targetText">${escapeHtml(annotation.targetText)}</textarea>
@@ -680,50 +1096,18 @@ function renderAnnotationsEditor(): void {
           <input data-field="created" value="${escapeAttr(annotation.created)}" />
         </div>
       </div>
-    `;
+    </div>
+  `;
+}
 
-    bindAnnotationInput(card, annotation, "id", (value) => {
-      const previous = annotation.metadata;
-      annotation.id = sanitizeId(value);
-      annotation.metadata = `annotations/${annotation.id}.annotation.json`;
-      if (previous !== annotation.metadata) {
-        state?.removedAnnotationPaths.add(previous);
-      }
-    });
-    bindAnnotationInput(card, annotation, "kind", (value) => {
-      annotation.kind = value;
-    });
-    bindAnnotationInput(card, annotation, "status", (value) => {
-      annotation.status = value;
-    });
-    bindAnnotationInput(card, annotation, "author", (value) => {
-      annotation.author = value;
-    });
-    bindAnnotationInput(card, annotation, "body", (value) => {
-      annotation.body = value;
-    });
-    bindAnnotationInput(card, annotation, "targetText", (value) => {
-      annotation.targetText = value;
-    });
-    bindAnnotationInput(card, annotation, "labels", (value) => {
-      annotation.labels = value;
-    });
-    bindAnnotationInput(card, annotation, "created", (value) => {
-      annotation.created = value;
-    });
-    card
-      .querySelector<HTMLButtonElement>('[data-field="remove"]')
-      ?.addEventListener("click", () => {
-        state?.removedAnnotationPaths.add(annotation.metadata);
-        if (annotation.originalMetadata) {
-          state?.removedAnnotationPaths.add(annotation.originalMetadata);
-        }
-        state?.annotations.splice(index, 1);
-        renderAnnotationsEditor();
-        markDirty();
-      });
-    annotationsEditor.appendChild(card);
-  });
+function annotationSaveButtonHtml(annotation: EditableAnnotation): string {
+  if (locallySavedAnnotationIds.has(annotation.id)) {
+    return `<button class="primary annotation-save-button is-saved" type="button" data-field="save">
+      <span aria-hidden="true">✓</span>
+      <span>Saved</span>
+    </button>`;
+  }
+  return `<button class="primary annotation-save-button" type="button" data-field="save">Save</button>`;
 }
 
 function bindAnnotationInput(
@@ -735,7 +1119,10 @@ function bindAnnotationInput(
   const input = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
     `[data-field="${field}"]`,
   );
-  input?.addEventListener("input", () => {
+  if (!input) {
+    return;
+  }
+  const handleChange = () => {
     update(input.value);
     if (field === "id") {
       const title = root.querySelector<HTMLDivElement>(".item-title");
@@ -743,17 +1130,75 @@ function bindAnnotationInput(
         title.textContent = annotation.id;
       }
     }
+    locallySavedAnnotationIds.delete(annotation.id);
+    resetAnnotationSaveButton(root);
     markDirty();
-  });
+  };
+  input.addEventListener("input", handleChange);
+  input.addEventListener("change", handleChange);
 }
 
-function markDirty(): void {
+function resetAnnotationSaveButton(root: HTMLElement): void {
+  const button = root.querySelector<HTMLButtonElement>('[data-field="save"]');
+  if (!button?.classList.contains("is-saved")) {
+    return;
+  }
+  button.classList.remove("is-saved");
+  button.textContent = "Save";
+}
+
+function updateAnnotationTargetFromLocation(annotation: EditableAnnotation): void {
+  if (!state || !annotation.line) {
+    return;
+  }
+  const line = Number(annotation.line);
+  if (!Number.isInteger(line) || line < 1) {
+    return;
+  }
+  annotation.targetText = JSON.stringify(sourceLineTarget(state.manifest.entrypoint, line), null, 2);
+}
+
+function syncAnnotationLocationFromTarget(annotation: EditableAnnotation): void {
+  if (!state) {
+    return;
+  }
+  try {
+    const target = targetRecord(JSON.parse(annotation.targetText));
+    const line = targetSourceLine(target, state.manifest.entrypoint);
+    annotation.line = line?.toString() ?? "";
+    annotation.page = line ? inferPageForLine(state.markdown, line, state.pageMap) : "";
+  } catch {
+    // Keep the user's in-progress JSON edit intact until it parses.
+  }
+}
+
+function updateAnnotationTargetTextarea(root: HTMLElement, annotation: EditableAnnotation): void {
+  const input = root.querySelector<HTMLTextAreaElement>('[data-field="targetText"]');
+  if (input) {
+    input.value = annotation.targetText;
+  }
+}
+
+function updateAnnotationLocationInputs(root: HTMLElement, annotation: EditableAnnotation): void {
+  const pageInput = root.querySelector<HTMLSelectElement>('[data-field="page"]');
+  const lineInput = root.querySelector<HTMLInputElement>('[data-field="line"]');
+  if (pageInput) {
+    pageInput.value = annotation.page;
+  }
+  if (lineInput) {
+    lineInput.value = annotation.line;
+  }
+}
+
+function markDirty(options: { render?: boolean } = {}): void {
   if (!state) {
     return;
   }
   state.dirty = true;
   fileNameEl.textContent = `${state.fileName} (edited)`;
-  queueRender();
+  if (options.render !== false) {
+    queueRender();
+  }
 }
 
 function queueRender(): void {
@@ -769,6 +1214,10 @@ async function renderAndValidate(): Promise<void> {
   if (!state) {
     return;
   }
+  if (renderTimer) {
+    window.clearTimeout(renderTimer);
+    renderTimer = undefined;
+  }
   clearDiagnostics();
   revokeAssetUrls();
   try {
@@ -776,8 +1225,9 @@ async function renderAndValidate(): Promise<void> {
     const doc = await openMcd(bytes);
     const validation = doc.validate();
     renderDiagnostics(validation);
+    const blocks = validation.valid ? doc.blocks() : [];
     const markdown = validation.valid ? doc.markdown({ expandTables: true }) : state.markdown;
-    await renderMarkdownPreview(markdown);
+    await renderMarkdownPreview(markdown, blocks);
     setStatus(
       validation.valid
         ? "Document is valid. Preview is rendered from the current in-memory package."
@@ -789,25 +1239,553 @@ async function renderAndValidate(): Promise<void> {
   }
 }
 
-async function renderMarkdownPreview(markdown: string): Promise<void> {
-  const rendered = marked.parse(markdown, { async: false }) as string;
+function annotationPreviewItems(markdown: string): AnnotationPreviewItem[] {
+  if (!state || state.annotations.length === 0) {
+    return [];
+  }
+
+  const lineCount = markdownLineCount(markdown);
+  const inlinePositions = inlineAnnotationPositions(markdown);
+  const sortable = state.annotations.map((annotation, index) => {
+    const inlinePosition = inlinePositions.get(annotation.id);
+    const targetLine = Number(annotation.line);
+    const line =
+      inlinePosition?.line ??
+      (Number.isInteger(targetLine) && targetLine > 0 ? targetLine : 1);
+    return {
+      id: annotation.id,
+      annotation,
+      line: Math.min(Math.max(1, line), lineCount),
+      column: inlinePosition?.column ?? Number.MAX_SAFE_INTEGER,
+      hasInlineMarker: Boolean(inlinePosition),
+      manifestIndex: index,
+    };
+  });
+
+  sortable.sort((left, right) => {
+    return (
+      left.line - right.line ||
+      left.column - right.column ||
+      left.manifestIndex - right.manifestIndex
+    );
+  });
+
+  return sortable.map((item, index) => ({
+    id: item.id,
+    annotation: item.annotation,
+    line: item.line,
+    hasInlineMarker: item.hasInlineMarker,
+    number: index + 1,
+  }));
+}
+
+function inlineAnnotationPositions(markdown: string): Map<string, { line: number; column: number }> {
+  const positions = new Map<string, { line: number; column: number }>();
+  const lines = markdown.split(/\r\n|\r|\n/);
+  const markerPattern = /\[\[annotation:([A-Za-z0-9][A-Za-z0-9_.-]*)\]\]/g;
+  const bodyToId = new Map(state?.annotations.map((annotation) => [annotation.body, annotation.id]));
+  const generatedPattern = /\(@annotation:\s*\[([^\]]*)\]\)/g;
+
+  lines.forEach((line, lineIndex) => {
+    markerPattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = markerPattern.exec(line)) !== null) {
+      const id = match[1];
+      if (id && !positions.has(id)) {
+        positions.set(id, { line: lineIndex + 1, column: match.index + 1 });
+      }
+    }
+
+    if (isStandaloneGeneratedAnnotationLine(line)) {
+      return;
+    }
+
+    generatedPattern.lastIndex = 0;
+    while ((match = generatedPattern.exec(line)) !== null) {
+      const id = bodyToId.get(match[1] ?? "");
+      if (id && !positions.has(id)) {
+        positions.set(id, { line: lineIndex + 1, column: match.index + 1 });
+      }
+    }
+  });
+
+  return positions;
+}
+
+function annotatedPreviewMarkdown(markdown: string, items: AnnotationPreviewItem[]): string {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const lineMarkers = new Map<number, AnnotationPreviewItem[]>();
+  for (const item of items) {
+    if (item.hasInlineMarker) {
+      continue;
+    }
+    const markers = lineMarkers.get(item.line) ?? [];
+    markers.push(item);
+    lineMarkers.set(item.line, markers);
+  }
+
+  const lines = markdown.split(/\r\n|\r|\n/).map((line, index) => {
+    if (isStandaloneGeneratedAnnotationLine(line)) {
+      return "";
+    }
+
+    let withInlineMarkers = line.replace(
+      /\[\[annotation:([A-Za-z0-9][A-Za-z0-9_.-]*)\]\]/g,
+      (_raw, id: string) => {
+        const item = itemById.get(id);
+        return item ? annotationMarkerHtml(item) : "";
+      },
+    );
+    withInlineMarkers = withInlineMarkers.replace(
+      /\(@annotation:\s*\[([^\]]*)\]\)/g,
+      (_raw, body: string) => {
+        const item = items.find((candidate) => candidate.annotation.body === body);
+        return item ? annotationMarkerHtml(item) : "";
+      },
+    );
+    const markers = lineMarkers.get(index + 1);
+    if (!markers || markers.length === 0) {
+      return withInlineMarkers;
+    }
+    const markerHtml = markers
+      .sort((left, right) => left.number - right.number)
+      .map(annotationMarkerHtml)
+      .join("");
+    return withInlineMarkers.trim() ? `${withInlineMarkers} ${markerHtml}` : markerHtml;
+  });
+
+  return lines.join("\n");
+}
+
+function isStandaloneGeneratedAnnotationLine(line: string): boolean {
+  return /^\s*\(@annotation:\s*\[[^\]]*\]\)\s*$/.test(line);
+}
+
+function annotationMarkerHtml(item: AnnotationPreviewItem): string {
+  return `<sup id="mcd-annotation-ref-${escapeAttr(
+    item.id,
+  )}" class="mcd-annotation-marker"><a href="#mcd-annotation-${escapeAttr(
+    item.id,
+  )}" aria-label="Annotation ${item.number}">${item.number}</a></sup>`;
+}
+
+function annotationEndnotesNode(items: AnnotationPreviewItem[]): HTMLElement | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const section = document.createElement("section");
+  section.className = "mcd-annotations";
+  section.setAttribute("aria-label", "Annotations");
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Annotations";
+
+  const list = document.createElement("ol");
+  for (const item of items) {
+    const entry = document.createElement("li");
+    entry.id = `mcd-annotation-${item.id}`;
+
+    const link = document.createElement("a");
+    link.className = "mcd-annotation-backlink";
+    link.href = `#mcd-annotation-ref-${item.id}`;
+    link.setAttribute("aria-label", `Back to annotation ${item.number}`);
+
+    const kind = document.createElement("span");
+    kind.className = "mcd-annotation-kind";
+    kind.textContent = item.annotation.kind;
+
+    link.append(kind, document.createTextNode(`: ${item.annotation.body}`));
+    entry.appendChild(link);
+    list.appendChild(entry);
+  }
+
+  section.append(heading, list);
+  return section;
+}
+
+async function renderMarkdownPreview(markdown: string, blocks: DocumentBlock[] = []): Promise<void> {
+  const annotationItems = annotationPreviewItems(markdown);
+  const rendered = marked.parse(annotatedPreviewMarkdown(markdown, annotationItems), {
+    async: false,
+  }) as string;
   const sanitized = DOMPurify.sanitize(rendered, {
     USE_PROFILES: { html: true, mathMl: true },
-    ADD_ATTR: ["target"],
+    ADD_ATTR: ["aria-label", "target"],
   });
-  renderPagedPreview(sanitized);
+  renderPagedPreview(sanitized, annotationItems);
   enhancePreviewDom();
   await rewritePackageImageSources();
   await waitForPreviewImages();
   repaginatePreview();
+  enableInlinePreviewEditing(blocks);
 }
 
-function renderPagedPreview(html: string): void {
+function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
+  if (!state) {
+    return;
+  }
+  for (const marker of Array.from(
+    preview.querySelectorAll<HTMLElement>(".mcd-annotation-marker, .mcd-citation-ref"),
+  )) {
+    marker.contentEditable = "false";
+  }
+  enableInlineTextEditing(blocks);
+  enableInlineTableEditing();
+}
+
+function enableInlineTextEditing(blocks: DocumentBlock[]): void {
+  const candidates = editableTextCandidates();
+  let cursor = 0;
+
+  for (const block of blocks) {
+    if (!isEditableTextBlock(block) || !block.source) {
+      continue;
+    }
+    const blockText = normalizedEditableText(block.text);
+    if (!blockText) {
+      continue;
+    }
+
+    const matchIndex = candidates.findIndex((candidate, index) => {
+      return index >= cursor && normalizedEditableText(editableText(candidate)) === blockText;
+    });
+    if (matchIndex < 0) {
+      continue;
+    }
+
+    const element = candidates[matchIndex];
+    cursor = matchIndex + 1;
+    bindInlineTextElement(element, block);
+  }
+}
+
+function editableTextCandidates(): HTMLElement[] {
+  return Array.from(
+    preview.querySelectorAll<HTMLElement>(
+      ".preview-page-body h1, .preview-page-body h2, .preview-page-body h3, .preview-page-body h4, .preview-page-body h5, .preview-page-body h6, .preview-page-body p, .preview-page-body ul, .preview-page-body ol, .preview-page-body blockquote",
+    ),
+  ).filter((element) => {
+    return !element.closest(".mcd-annotations, table, .mcd-math");
+  });
+}
+
+function isEditableTextBlock(
+  block: DocumentBlock,
+): block is Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }> {
+  return ["heading", "paragraph", "list", "quote"].includes(block.type);
+}
+
+function bindInlineTextElement(
+  element: HTMLElement,
+  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
+): void {
+  element.contentEditable = "true";
+  element.spellcheck = true;
+  element.classList.add("inline-editable");
+  element.setAttribute("aria-label", "Edit text");
+
+  element.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    element.blur();
+  });
+  element.addEventListener("input", () => {
+    updateMarkdownFromInlineText(element, block);
+  });
+  element.addEventListener("blur", () => {
+    renderTablesEditor();
+    queueRender();
+  });
+}
+
+function updateMarkdownFromInlineText(
+  element: HTMLElement,
+  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
+): void {
+  if (!state || !block.source) {
+    return;
+  }
+
+  const text = editableText(element);
+  const replacement = markdownReplacementForInlineText(element, block, block.source, text);
+  replaceMarkdownSource(block.source, replacement);
+  markDirty({ render: false });
+}
+
+function markdownReplacementForInlineText(
+  element: HTMLElement,
+  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
+  source: SourceSpan,
+  text: string,
+): string {
+  const lines = text
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const fallback = text.trim();
+
+  if (block.type === "heading") {
+    return `${"#".repeat(block.level)} ${fallback}`;
+  }
+  if (block.type === "quote") {
+    return (lines.length > 0 ? lines : [fallback]).map((line) => `> ${line}`).join("\n");
+  }
+  if (block.type === "list") {
+    return markdownListReplacement(element, source);
+  }
+  return fallback;
+}
+
+function markdownListReplacement(element: HTMLElement, source: SourceSpan): string {
+  const itemTexts = Array.from(element.querySelectorAll<HTMLLIElement>("li"))
+    .map((item) => editableText(item).trim())
+    .filter(Boolean);
+  if (itemTexts.length === 0) {
+    return "";
+  }
+  const sourceLines = state?.markdown.split(/\r\n|\r|\n/).slice(source.startLine - 1, source.endLine) ?? [];
+  const markers = sourceLines
+    .map((line) => /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line)?.[1])
+    .filter((marker): marker is string => Boolean(marker));
+  return itemTexts
+    .map((item, index) => `${markers[index] ?? "- "}${item}`)
+    .join("\n");
+}
+
+function replaceMarkdownSource(source: SourceSpan, replacement: string): void {
+  if (!state) {
+    return;
+  }
+  const lines = state.markdown.split(/\r\n|\r|\n/);
+  const startIndex = Math.max(0, source.startLine - 1);
+  const deleteCount = Math.max(1, source.endLine - source.startLine + 1);
+  lines.splice(startIndex, deleteCount, ...replacement.split("\n"));
+  state.markdown = lines.join("\n");
+  markdownEditor.value = state.markdown;
+}
+
+function editableText(element: HTMLElement): string {
+  const clone = element.cloneNode(true) as HTMLElement;
+  for (const ignored of Array.from(
+    clone.querySelectorAll(".mcd-annotation-marker, .mcd-citation-ref"),
+  )) {
+    ignored.remove();
+  }
+  return (clone.textContent ?? "").replace(/\u00a0/g, " ").trim();
+}
+
+function normalizedEditableText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function enableInlineTableEditing(): void {
+  if (!state) {
+    return;
+  }
+
+  const placements = tablePlacementsFromMarkdown(state.markdown);
+  const previewTables = Array.from(
+    preview.querySelectorAll<HTMLTableElement>(".preview-page-body table"),
+  ).filter((table) => !table.closest(".mcd-annotations"));
+  let tableCursor = 0;
+
+  for (const placement of placements) {
+    const tableState = state.tables.find((table) => table.manifest.id === placement.table);
+    if (!tableState) {
+      continue;
+    }
+    const columns = columnsForPlacement(tableState, placement);
+    if (columns.length === 0) {
+      continue;
+    }
+
+    const matchIndex = findPreviewTableForColumns(previewTables, tableCursor, columns);
+    if (matchIndex < 0) {
+      continue;
+    }
+    bindInlineTable(previewTables[matchIndex], tableState, columns);
+    tableCursor = matchIndex + 1;
+  }
+}
+
+function tablePlacementsFromMarkdown(markdown: string): TablePlacement[] {
+  const placements: TablePlacement[] = [];
+  const directivePattern = /(?:^|\n):::\s*table[^\n]*\n([\s\S]*?)\n:::/g;
+  let match: RegExpExecArray | null;
+  while ((match = directivePattern.exec(markdown)) !== null) {
+    const fields = directiveFields(match[1] ?? "");
+    const table = fields.get("table");
+    if (!table) {
+      continue;
+    }
+    placements.push({
+      table,
+      view: fields.get("view"),
+      display: fields.get("display") === "chart" ? "chart" : "table",
+    });
+  }
+  return placements;
+}
+
+function directiveFields(body: string): Map<string, string> {
+  const fields = new Map<string, string>();
+  for (const line of body.split(/\r\n|\r|\n/)) {
+    const [key, ...rest] = line.split(":");
+    if (!key || rest.length === 0) {
+      continue;
+    }
+    fields.set(key.trim(), rest.join(":").trim());
+  }
+  return fields;
+}
+
+function columnsForPlacement(
+  table: EditableTable,
+  placement: TablePlacement,
+): Array<TableViewColumn & { label: string; schema: TableColumn }> {
+  const view = placement.view ? table.views[placement.view] : undefined;
+  const schemaByName = new Map(table.schema.columns.map((column) => [column.name, column]));
+  const requested =
+    placement.display === "chart" && view?.chart
+      ? chartColumns(view.chart)
+      : (view?.columns ?? table.schema.columns);
+
+  return requested.flatMap((column) => {
+    const schema = schemaByName.get(column.name);
+    if (!schema) {
+      return [];
+    }
+    return [
+      {
+        ...column,
+        label: column.label ?? schema.label ?? column.name,
+        schema,
+      },
+    ];
+  });
+}
+
+function chartColumns(chart: NonNullable<TableView["chart"]>): TableViewColumn[] {
+  const seen = new Set<string>();
+  const columns: TableViewColumn[] = [];
+  for (const column of [chart.x, chart.y, chart.series, chart.grouping, chart.markLabels]) {
+    if (!column?.column || seen.has(column.column)) {
+      continue;
+    }
+    seen.add(column.column);
+    columns.push({
+      name: column.column,
+      label: column.label,
+      format: column.format,
+      currency: column.currency,
+      unit: column.unit,
+      percent: column.percent,
+    });
+  }
+  return columns;
+}
+
+function findPreviewTableForColumns(
+  tables: HTMLTableElement[],
+  startIndex: number,
+  columns: Array<TableViewColumn & { label: string; schema: TableColumn }>,
+): number {
+  const expected = columns.map((column) => normalizedEditableText(column.label));
+  for (let index = startIndex; index < tables.length; index += 1) {
+    const headers = Array.from(tables[index].querySelectorAll("thead th")).map((header) =>
+      normalizedEditableText(header.textContent ?? ""),
+    );
+    if (
+      headers.length === expected.length &&
+      headers.every((header, columnIndex) => header === expected[columnIndex])
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function bindInlineTable(
+  tableElement: HTMLTableElement,
+  tableState: EditableTable,
+  columns: Array<TableViewColumn & { label: string; schema: TableColumn }>,
+): void {
+  tableElement.classList.add("inline-editable-table");
+  const rows = Array.from(tableElement.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+  rows.forEach((rowElement, rowIndex) => {
+    const row = tableState.rows[rowIndex];
+    if (!row) {
+      return;
+    }
+    const cells = Array.from(rowElement.querySelectorAll<HTMLTableCellElement>("td"));
+    cells.forEach((cell, columnIndex) => {
+      const column = columns[columnIndex];
+      if (!column) {
+        return;
+      }
+      cell.contentEditable = "true";
+      cell.spellcheck = true;
+      cell.classList.add("inline-editable");
+      cell.setAttribute("aria-label", `${tableState.manifest.id} ${column.name} row ${rowIndex + 1}`);
+      cell.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+        event.preventDefault();
+        cell.blur();
+      });
+      cell.addEventListener("input", () => {
+        row[column.name] = parseInlineTableValue(cell.textContent ?? "", column);
+        markDirty({ render: false });
+      });
+      cell.addEventListener("blur", () => {
+        renderTablesEditor();
+        queueRender();
+      });
+    });
+  });
+}
+
+function parseInlineTableValue(
+  value: string,
+  column: TableViewColumn & { schema: TableColumn },
+): string {
+  let next = value.replace(/\u00a0/g, " ").trim();
+  const affix = column.currency ?? column.unit;
+  if (affix) {
+    next = next
+      .replace(new RegExp(`^${escapeRegExp(affix)}\\s+`, "i"), "")
+      .replace(new RegExp(`\\s+${escapeRegExp(affix)}$`, "i"), "");
+  }
+  if (column.percent || column.format === "percent") {
+    next = next.replace(/%$/, "").trim();
+  }
+  if (
+    ["integer", "decimal"].includes(column.schema.type) ||
+    ["number", "currency", "percent", "integer", "decimal"].includes(column.format ?? "")
+  ) {
+    next = next.replace(/,/g, "");
+  }
+  return next;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderPagedPreview(html: string, annotationItems: AnnotationPreviewItem[] = []): void {
   const template = document.createElement("template");
   template.innerHTML = html;
   const nodes = Array.from(template.content.childNodes).filter((node) => {
     return node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim());
   });
+  const annotationsNode = annotationEndnotesNode(annotationItems);
+  if (annotationsNode) {
+    nodes.push(annotationsNode);
+  }
 
   preview.innerHTML = "";
   preview.classList.add("is-paged");
@@ -820,7 +1798,7 @@ function renderPagedPreview(html: string): void {
     }
   }
 
-  updatePageMapMetadata(pageNumber);
+  updatePageMapMetadata(pageNumber, annotationPreviewPageNumber());
 }
 
 function appendPreviewPage(pageNumber: number): { page: HTMLElement; body: HTMLDivElement } {
@@ -853,7 +1831,7 @@ function repaginatePreview(): void {
   preview.innerHTML = "";
 
   const pageNumber = paginateNodes(nodes);
-  updatePageMapMetadata(pageNumber);
+  updatePageMapMetadata(pageNumber, annotationPreviewPageNumber());
 }
 
 function paginateNodes(nodes: Node[]): number {
@@ -875,6 +1853,10 @@ interface PreviewPageCursor {
 }
 
 function appendNodeToPreviewPage(node: Node, cursor: PreviewPageCursor): PreviewPageCursor {
+  if (isForcedPreviewPageBreak(node) && cursor.page.body.childNodes.length > 0) {
+    cursor = nextPreviewPage(cursor);
+  }
+
   cursor.page.body.appendChild(node);
   if (!isPreviewPageOverflowing(cursor.page.body)) {
     return cursor;
@@ -909,6 +1891,10 @@ function nextPreviewPage(cursor: PreviewPageCursor): PreviewPageCursor {
     pageNumber,
     page: appendPreviewPage(pageNumber),
   };
+}
+
+function isForcedPreviewPageBreak(node: Node): boolean {
+  return node instanceof HTMLElement && node.classList.contains("mcd-annotations");
 }
 
 function isPreviewPageOverflowing(body: HTMLDivElement): boolean {
@@ -1072,6 +2058,7 @@ function enhancePreviewDom(): void {
       link.rel = "noopener noreferrer";
     }
   }
+  enhanceCitationLinks();
 
   for (const table of Array.from(preview.querySelectorAll<HTMLTableElement>("table"))) {
     if (table.parentElement?.classList.contains("preview-table-wrap")) {
@@ -1091,6 +2078,41 @@ function enhancePreviewDom(): void {
   }
 }
 
+function enhanceCitationLinks(): void {
+  for (const link of Array.from(preview.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    if (link.closest("sup, pre, code, .mcd-annotation-marker, .mcd-citation-ref")) {
+      continue;
+    }
+    const citation = numericCitationLabel(link);
+    if (!citation) {
+      continue;
+    }
+
+    link.textContent = `[${citation}]`;
+    link.setAttribute("aria-label", `Reference ${citation}`);
+    const marker = document.createElement("sup");
+    marker.className = "mcd-citation-ref";
+    link.replaceWith(marker);
+    marker.appendChild(link);
+  }
+}
+
+function numericCitationLabel(link: HTMLAnchorElement): string | undefined {
+  const text = (link.textContent ?? "").trim();
+  const bracketed = /^\[(\d+)\]$/.exec(text);
+  if (bracketed?.[1]) {
+    return bracketed[1];
+  }
+
+  const href = link.getAttribute("href") ?? "";
+  const bare = /^(\d+)$/.exec(text);
+  if (bare?.[1] && /(?:^|[#/?=&-])cite(?:_|-)?note(?:$|[#/?=&-])/i.test(href)) {
+    return bare[1];
+  }
+
+  return undefined;
+}
+
 async function waitForPreviewImages(): Promise<void> {
   const images = Array.from(preview.querySelectorAll<HTMLImageElement>("img"));
   await Promise.all(
@@ -1106,7 +2128,23 @@ async function waitForPreviewImages(): Promise<void> {
   );
 }
 
-function updatePageMapMetadata(pageCount: number): void {
+function annotationPreviewPageNumber(): number | undefined {
+  const annotationPage = preview.querySelector<HTMLElement>(".mcd-annotations")?.closest<HTMLElement>(
+    ".preview-page",
+  );
+  if (!annotationPage) {
+    return undefined;
+  }
+  const pageNumber = Number(annotationPage.dataset.pageNumber);
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+    return undefined;
+  }
+  annotationPage.setAttribute("aria-label", "Annotations");
+  annotationPage.querySelector(".preview-page-number")?.replaceChildren("Annotations");
+  return pageNumber;
+}
+
+function updatePageMapMetadata(pageCount: number, annotationPageNumber?: number): void {
   if (!state) {
     return;
   }
@@ -1124,7 +2162,7 @@ function updatePageMapMetadata(pageCount: number): void {
       const previous = previousPages[index];
       return {
         number,
-        label: previous?.label ?? `Page ${number}`,
+        label: number === annotationPageNumber ? "Annotations" : (previous?.label ?? `Page ${number}`),
         ...(previous?.sourceRefs ? { sourceRefs: previous.sourceRefs } : {}),
         ...(previous?.assets ? { assets: previous.assets } : {}),
         ...(previous?.rendered ? { rendered: previous.rendered } : {}),
@@ -1250,9 +2288,13 @@ function renderMath(tex: string, displayMode: boolean): string {
 }
 
 function annotationToJson(annotation: EditableAnnotation): Record<string, unknown> {
+  const line = Number(annotation.line);
   const output: Record<string, unknown> = {
     id: annotation.id,
-    target: JSON.parse(annotation.targetText) as unknown,
+    target:
+      state && Number.isInteger(line) && line > 0
+        ? sourceLineTarget(state.manifest.entrypoint, line)
+        : (JSON.parse(annotation.targetText) as unknown),
     kind: annotation.kind,
     status: annotation.status,
     body: annotation.body,
@@ -1271,6 +2313,25 @@ function annotationToJson(annotation: EditableAnnotation): Record<string, unknow
     output.labels = [...new Set(labels)];
   }
   return output;
+}
+
+async function saveAnnotationLocally(annotation: EditableAnnotation): Promise<void> {
+  if (!state) {
+    return;
+  }
+  try {
+    applyStateToZip(state);
+    locallySavedAnnotationIds.add(annotation.id);
+    state.dirty = true;
+    fileNameEl.textContent = `${state.fileName} (edited)`;
+    await renderAndValidate();
+    renderAnnotationsEditor();
+    setStatus(
+      `Saved annotation '${annotation.id}' locally in this browser session. Save .mcd to write the full file.`,
+    );
+  } catch (error) {
+    showError(error);
+  }
 }
 
 async function saveDocument(): Promise<void> {

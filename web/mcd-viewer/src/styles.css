@@ -66,16 +66,9 @@ button:disabled {
   min-width: 0;
 }
 
-.brand-mark {
-  align-items: center;
-  background: #0f766e;
-  border-radius: 6px;
-  color: #ffffff;
-  display: inline-flex;
-  font-weight: 700;
+.brand-logo {
   height: 34px;
-  justify-content: center;
-  width: 34px;
+  width: auto;
 }
 
 .brand-title {
@@ -231,6 +224,10 @@ textarea {
   resize: vertical;
 }
 
+.item-card textarea {
+  min-height: 96px;
+}
+
 .list-stack {
   display: grid;
   gap: 12px;
@@ -242,12 +239,86 @@ textarea {
   padding: 12px;
 }
 
+.annotation-card:not(.is-expanded) .item-header {
+  margin-bottom: 0;
+}
+
 .item-header {
   align-items: center;
   display: flex;
   gap: 8px;
   justify-content: space-between;
   margin-bottom: 10px;
+}
+
+.item-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.annotation-summary {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.annotation-summary:hover {
+  border-color: transparent;
+}
+
+.annotation-details {
+  border-top: 1px solid #e4e8ec;
+  margin-top: 10px;
+  padding-top: 12px;
+}
+
+.annotation-detail-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.annotation-save-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.annotation-save-button.is-saved {
+  background: #0f766e;
+}
+
+.disclosure-button {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  padding: 6px;
+  width: 34px;
+}
+
+.disclosure-button:focus,
+.disclosure-button:focus-visible {
+  outline: none;
+}
+
+.disclosure-icon {
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  display: inline-block;
+  height: 8px;
+  transform: rotate(45deg);
+  width: 8px;
+}
+
+.annotation-card.is-expanded .disclosure-icon {
+  transform: rotate(225deg);
 }
 
 .item-title {
@@ -389,6 +460,7 @@ textarea {
 .preview-document p,
 .preview-document li {
   max-width: 72ch;
+  position: relative;
 }
 
 .preview-document blockquote {
@@ -446,6 +518,30 @@ textarea {
   text-align: left;
 }
 
+.inline-editable {
+  border-radius: 4px;
+  cursor: text;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+  transition:
+    background-color 120ms ease,
+    outline-color 120ms ease;
+}
+
+.inline-editable:hover {
+  background: #eef8f6;
+  outline-color: #b9d9d3;
+}
+
+.inline-editable:focus {
+  background: #ffffff;
+  outline: 2px solid #0f766e;
+}
+
+.inline-editable-table td {
+  min-width: 80px;
+}
+
 .preview-document img {
   display: block;
   height: auto;
@@ -470,6 +566,74 @@ textarea {
 
 .mcd-math-fallback {
   color: #9a3412;
+}
+
+.mcd-citation-ref {
+  font-size: 0.72em;
+  line-height: 0;
+  margin-left: 0.08em;
+  vertical-align: super;
+}
+
+.mcd-citation-ref a {
+  color: #0f766e;
+  text-decoration: none;
+}
+
+.mcd-citation-ref a:hover,
+.mcd-citation-ref a:focus {
+  text-decoration: underline;
+}
+
+.mcd-annotation-marker {
+  font-size: 1em;
+  font-weight: 600;
+  left: -1.35rem;
+  line-height: inherit;
+  margin-left: 0;
+  opacity: 0.5;
+  position: absolute;
+  vertical-align: baseline;
+}
+
+.mcd-annotation-marker a {
+  color: #0f766e;
+  text-decoration: none;
+}
+
+.mcd-annotation-marker a:hover,
+.mcd-annotation-marker a:focus {
+  text-decoration: underline;
+}
+
+.mcd-annotations {
+  font-size: 0.9em;
+  margin-top: 0;
+  opacity: 0.5;
+}
+
+.mcd-annotations h2 {
+  font-size: 1.1em;
+  margin-bottom: 12px;
+}
+
+.mcd-annotations li {
+  margin: 6px 0;
+}
+
+.mcd-annotation-backlink {
+  color: inherit;
+  text-decoration: none;
+  white-space: pre-wrap;
+}
+
+.mcd-annotation-backlink:hover,
+.mcd-annotation-backlink:focus {
+  text-decoration: underline;
+}
+
+.mcd-annotation-kind {
+  font-weight: 700;
 }
 
 .empty-state {
