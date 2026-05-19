@@ -20,6 +20,7 @@ const DEFAULT_ENTRYPOINT = "content/main.md";
 const HISTORY_LIMIT = 20;
 const HISTORY_GROUP_IDLE_MS = 1200;
 const EMPTY_FIRST_HEADING_ID = "mcd-empty-first-heading";
+const RESERVED_ROW_HEADER_COLUMN = "row_header";
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -104,9 +105,9 @@ interface Manifest {
   entrypoint: string;
   title?: string;
   tables?: TableManifestEntry[];
-  images?: unknown[];
+  images?: ImageManifestEntry[];
   annotations?: AnnotationManifestEntry[];
-  assets?: unknown[];
+  assets?: AssetManifestEntry[];
   layout?: LayoutManifestEntry;
   [key: string]: unknown;
 }
@@ -134,6 +135,16 @@ interface TableManifestEntry {
   data: string;
   schema: string;
   views?: Record<string, string>;
+}
+
+interface ImageManifestEntry {
+  id: string;
+  metadata: string;
+}
+
+interface AssetManifestEntry {
+  id?: string;
+  path: string;
 }
 
 interface AnnotationManifestEntry {
@@ -176,6 +187,7 @@ interface TableView {
   table: string;
   display?: "table" | "chart";
   columns?: TableViewColumn[];
+  style?: TableViewStyle;
   chart?: {
     x?: TableChartEncoding;
     y?: TableChartEncoding;
@@ -183,6 +195,12 @@ interface TableView {
     grouping?: TableChartEncoding;
     markLabels?: Partial<TableChartEncoding> & { show?: boolean };
   };
+}
+
+interface TableViewStyle {
+  showColumnHeaders?: boolean;
+  showRowHeaders?: boolean;
+  [key: string]: unknown;
 }
 
 interface EditableTable {
@@ -196,6 +214,12 @@ interface TablePlacement {
   table: string;
   view?: string;
   display: "table" | "chart";
+  source?: SourceSpan;
+}
+
+interface InsertLineTarget {
+  body: HTMLDivElement;
+  y: number;
 }
 
 type EditableTextBlock = Extract<
@@ -292,12 +316,14 @@ let previewEditMode = false;
 let sidebarExpanded = false;
 let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
 let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
+let previewBlockSources = new WeakMap<HTMLElement, SourceSpan>();
 let locallySavedAnnotationIds = new Set<string>();
 let undoStack: StateSnapshot[] = [];
 let redoStack: StateSnapshot[] = [];
 let activeHistoryGroupKey: string | undefined;
 let historyGroupTimer: number | undefined;
 let savedContentKey = "";
+let activeModal: HTMLElement | undefined;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -449,6 +475,12 @@ window.addEventListener("beforeunload", (event) => {
   }
   event.preventDefault();
   event.returnValue = UNSAVED_CHANGES_PROMPT;
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && activeModal) {
+    closeActiveModal();
+  }
 });
 
 preview.addEventListener("dragover", (event: DragEvent) => {
@@ -1186,7 +1218,12 @@ function renderTablesEditor(): void {
       .querySelector<HTMLButtonElement>('[data-action="add-row"]')
       ?.addEventListener("click", () => {
         recordHistoryCheckpoint();
-        const row = Object.fromEntries(table.schema.columns.map((column) => [column.name, ""]));
+        const row = Object.fromEntries(
+          table.schema.columns.map((column) => [
+            column.name,
+            column.name === RESERVED_ROW_HEADER_COLUMN ? String(table.rows.length + 1) : "",
+          ]),
+        );
         table.rows.push(row);
         renderTablesEditor();
         markDirty();
@@ -1586,6 +1623,7 @@ function setPreviewEditMode(enabled: boolean): void {
   applyPreviewEditMode();
   syncEditModeButton();
   if (!enabled && state) {
+    closeActiveModal();
     renderTablesEditor();
     queueRender();
   }
@@ -1842,13 +1880,16 @@ function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
   }
   inlineTextBindings = new WeakMap();
   inlineTableBindings = new WeakMap();
+  previewBlockSources = new WeakMap();
   for (const marker of Array.from(
     preview.querySelectorAll<HTMLElement>(".mcd-annotation-marker, .mcd-citation-ref"),
   )) {
     marker.contentEditable = "false";
   }
   enableInlineTextEditing(blocks);
-  enableInlineTableEditing();
+  enableInlineTableEditing(blocks);
+  bindPreviewImageSources(blocks);
+  applyTableHeaderPreferences(blocks);
   applyPreviewEditMode();
 }
 
@@ -1908,6 +1949,9 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
   element.tabIndex = 0;
   element.classList.add("inline-edit-target");
   inlineTextBindings.set(element, { block, source: block?.source });
+  if (block?.source) {
+    previewBlockSources.set(element, block.source);
+  }
 
   element.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
@@ -2257,14 +2301,18 @@ function applyPreviewEditMode(): void {
           : "Text block",
     );
   }
+  renderInsertionGuides();
 }
 
-function enableInlineTableEditing(): void {
+function enableInlineTableEditing(blocks: DocumentBlock[] = []): void {
   if (!state) {
     return;
   }
 
-  const placements = tablePlacementsFromMarkdown(state.markdown);
+  const placements = tablePlacementsFromBlocks(blocks);
+  if (placements.length === 0) {
+    placements.push(...tablePlacementsFromMarkdown(state.markdown));
+  }
   const previewTables = Array.from(
     preview.querySelectorAll<HTMLTableElement>(".preview-page-body table"),
   ).filter((table) => !table.closest(".mcd-annotations"));
@@ -2285,8 +2333,40 @@ function enableInlineTableEditing(): void {
       continue;
     }
     bindInlineTable(previewTables[matchIndex], tableState, columns);
+    if (placement.source) {
+      const tableElement = previewTables[matchIndex];
+      previewBlockSources.set(tableElement, placement.source);
+      const wrapper = tableElement.closest<HTMLElement>(".preview-table-wrap");
+      if (wrapper) {
+        previewBlockSources.set(wrapper, placement.source);
+      }
+    }
     tableCursor = matchIndex + 1;
   }
+}
+
+function tablePlacementsFromBlocks(blocks: DocumentBlock[]): TablePlacement[] {
+  return blocks.flatMap((block) => {
+    if (block.type !== "table_ref") {
+      return [];
+    }
+    const placement = block.placement as {
+      table?: unknown;
+      view?: unknown;
+      display?: unknown;
+    };
+    if (typeof placement.table !== "string") {
+      return [];
+    }
+    return [
+      {
+        table: placement.table,
+        view: typeof placement.view === "string" ? placement.view : undefined,
+        display: placement.display === "chart" ? "chart" : "table",
+        source: block.source,
+      },
+    ];
+  });
 }
 
 function tablePlacementsFromMarkdown(markdown: string): TablePlacement[] {
@@ -2306,6 +2386,134 @@ function tablePlacementsFromMarkdown(markdown: string): TablePlacement[] {
     });
   }
   return placements;
+}
+
+function bindPreviewImageSources(blocks: DocumentBlock[]): void {
+  const imageBlocks = blocks.filter(
+    (block): block is Extract<DocumentBlock, { type: "image_ref" }> =>
+      block.type === "image_ref" && Boolean(block.source),
+  );
+  if (imageBlocks.length === 0) {
+    return;
+  }
+
+  const images = Array.from(
+    preview.querySelectorAll<HTMLImageElement>(".preview-page-body img"),
+  ).filter((image) => !image.closest(".mcd-annotations"));
+
+  images.forEach((image, index) => {
+    const source = imageBlocks[index]?.source;
+    if (!source) {
+      return;
+    }
+    previewBlockSources.set(image, source);
+    const topLevel = previewTopLevelElement(image);
+    if (topLevel) {
+      previewBlockSources.set(topLevel, source);
+    }
+  });
+}
+
+function applyTableHeaderPreferences(blocks: DocumentBlock[]): void {
+  if (!state) {
+    return;
+  }
+
+  const placements = tablePlacementsFromBlocks(blocks);
+  if (placements.length === 0) {
+    placements.push(...tablePlacementsFromMarkdown(state.markdown));
+  }
+
+  const previewTables = Array.from(
+    preview.querySelectorAll<HTMLTableElement>(".preview-page-body table"),
+  ).filter((table) => !table.closest(".mcd-annotations"));
+  let tableCursor = 0;
+
+  for (const placement of placements) {
+    const tableState = state.tables.find((table) => table.manifest.id === placement.table);
+    if (!tableState) {
+      continue;
+    }
+    const columns = columnsForPlacement(tableState, placement);
+    if (columns.length === 0) {
+      continue;
+    }
+    const matchIndex = findPreviewTableForColumns(previewTables, tableCursor, columns);
+    if (matchIndex < 0) {
+      continue;
+    }
+    const preferences = tableHeaderPreferences(tableState, placement);
+    applyHeaderPreferencesToTable(previewTables[matchIndex], preferences);
+    tableCursor = matchIndex + 1;
+  }
+}
+
+function tableHeaderPreferences(
+  table: EditableTable,
+  placement: TablePlacement,
+): { showColumnHeaders: boolean; showRowHeaders: boolean } {
+  const view = placement.view ? table.views[placement.view] : undefined;
+  return {
+    showColumnHeaders: view?.style?.showColumnHeaders !== false,
+    showRowHeaders: view?.style?.showRowHeaders === true,
+  };
+}
+
+function applyHeaderPreferencesToTable(
+  table: HTMLTableElement,
+  preferences: { showColumnHeaders: boolean; showRowHeaders: boolean },
+): void {
+  if (!preferences.showRowHeaders) {
+    removeReservedRowHeaderColumn(table);
+  } else {
+    convertReservedColumnToRowHeaders(table);
+  }
+  if (!preferences.showColumnHeaders) {
+    table.querySelector("thead")?.remove();
+  }
+}
+
+function removeReservedRowHeaderColumn(table: HTMLTableElement): void {
+  table.querySelector<HTMLTableCellElement>("thead tr > :first-child")?.remove();
+  Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr")).forEach((row) => {
+    const firstCell = row.querySelector<HTMLTableCellElement>("td, th");
+    if (!firstCell) {
+      return;
+    }
+    unbindInlineTableCell(firstCell);
+    firstCell.remove();
+  });
+}
+
+function convertReservedColumnToRowHeaders(table: HTMLTableElement): void {
+  Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr")).forEach((row, rowIndex) => {
+    const firstCell = row.querySelector<HTMLTableCellElement>("td, th");
+    if (!firstCell || firstCell.tagName === "TH") {
+      return;
+    }
+    const header = document.createElement("th");
+    header.scope = "row";
+    for (const attribute of Array.from(firstCell.attributes)) {
+      header.setAttribute(attribute.name, attribute.value);
+    }
+    header.innerHTML = firstCell.innerHTML;
+    header.className = firstCell.className;
+    header.tabIndex = firstCell.tabIndex;
+    header.title = firstCell.title;
+    const binding = inlineTableBindings.get(firstCell);
+    if (binding) {
+      bindInlineTableCell(header, binding, rowIndex);
+    }
+    firstCell.replaceWith(header);
+  });
+}
+
+function previewTopLevelElement(element: HTMLElement): HTMLElement | undefined {
+  let current: HTMLElement | null = element;
+  while (current?.parentElement && !current.parentElement.classList.contains("preview-page-body")) {
+    current = current.parentElement;
+  }
+  return current?.parentElement?.classList.contains("preview-page-body") ? current : undefined;
 }
 
 function directiveFields(body: string): Map<string, string> {
@@ -2407,29 +2615,44 @@ function bindInlineTable(
       cell.tabIndex = 0;
       cell.classList.add("inline-edit-target");
       cell.title = `${tableState.manifest.id} ${column.name} row ${rowIndex + 1}`;
-      inlineTableBindings.set(cell, { row, column });
-      cell.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") {
-          return;
-        }
-        event.stopPropagation();
-      });
-      cell.addEventListener("input", () => {
-        if (!previewEditMode) {
-          return;
-        }
-        const next = parseInlineTableValue(editableText(cell), column);
-        if ((row[column.name] ?? "") === next) {
-          return;
-        }
-        recordHistoryCheckpoint({
-          coalesceKey: `preview-table:${column.name}:${rowIndex}`,
-        });
-        row[column.name] = next;
-        markDirty({ render: false });
-      });
+      bindInlineTableCell(cell, { row, column }, rowIndex);
     });
   });
+}
+
+function bindInlineTableCell(
+  cell: HTMLTableCellElement,
+  binding: InlineTableBinding,
+  rowIndex: number,
+): void {
+  inlineTableBindings.set(cell, binding);
+  cell.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.stopPropagation();
+  });
+  cell.addEventListener("input", () => {
+    if (!previewEditMode) {
+      return;
+    }
+    const next = parseInlineTableValue(editableText(cell), binding.column);
+    if ((binding.row[binding.column.name] ?? "") === next) {
+      return;
+    }
+    recordHistoryCheckpoint({
+      coalesceKey: `preview-table:${binding.column.name}:${rowIndex}`,
+    });
+    binding.row[binding.column.name] = next;
+    markDirty({ render: false });
+  });
+}
+
+function unbindInlineTableCell(cell: HTMLTableCellElement): void {
+  inlineTableBindings.delete(cell);
+  cell.classList.remove("inline-edit-target", "inline-editable");
+  cell.contentEditable = "false";
+  cell.removeAttribute("aria-label");
 }
 
 function parseInlineTableValue(
@@ -2457,6 +2680,434 @@ function parseInlineTableValue(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderInsertionGuides(): void {
+  for (const layer of Array.from(preview.querySelectorAll(".mcd-insert-lines"))) {
+    layer.remove();
+  }
+  if (!state || !previewEditMode) {
+    return;
+  }
+
+  for (const body of Array.from(preview.querySelectorAll<HTMLDivElement>(".preview-page-body"))) {
+    const height = body.clientHeight;
+    if (height <= 0) {
+      continue;
+    }
+    const lineHeight = previewInsertionLineHeight(body);
+    const lineCount = Math.max(1, Math.floor(height / lineHeight));
+    const layer = document.createElement("div");
+    layer.className = "mcd-insert-lines";
+    layer.setAttribute("aria-hidden", "false");
+
+    for (let index = 0; index < lineCount; index += 1) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mcd-insert-line";
+      button.setAttribute("aria-label", `Insert content at line ${index + 1}`);
+      button.style.top = `${index * lineHeight}px`;
+      button.style.height = `${lineHeight}px`;
+      button.innerHTML = `<span aria-hidden="true">+</span>`;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showInsertTypePopup({
+          body,
+          y: index * lineHeight + lineHeight / 2,
+        });
+      });
+      layer.appendChild(button);
+    }
+
+    body.appendChild(layer);
+  }
+}
+
+function previewInsertionLineHeight(body: HTMLElement): number {
+  const styles = window.getComputedStyle(body);
+  const lineHeight = Number.parseFloat(styles.lineHeight);
+  if (Number.isFinite(lineHeight) && lineHeight > 0) {
+    return Math.max(20, lineHeight);
+  }
+  const fontSize = Number.parseFloat(styles.fontSize);
+  return Math.max(20, (Number.isFinite(fontSize) ? fontSize : 16) * 1.45);
+}
+
+function showInsertTypePopup(target: InsertLineTarget): void {
+  const line = markdownInsertionLine(target);
+  showModal(`
+    <div class="mcd-popup">
+      <div class="mcd-popup-header">
+        <div class="mcd-popup-title">Add content</div>
+        <button class="mcd-popup-close" type="button" data-action="close" aria-label="Close">&times;</button>
+      </div>
+      <div class="mcd-popup-actions">
+        <button class="primary" type="button" data-action="table">Table</button>
+        <button type="button" data-action="image">Image</button>
+      </div>
+    </div>
+  `);
+  activeModal
+    ?.querySelector<HTMLButtonElement>('[data-action="table"]')
+    ?.addEventListener("click", () => showTableSizePopup(line));
+  activeModal
+    ?.querySelector<HTMLButtonElement>('[data-action="image"]')
+    ?.addEventListener("click", () => showImagePopup(line));
+}
+
+function showTableSizePopup(insertLine: number): void {
+  showModal(`
+    <form class="mcd-popup" id="tableCreateForm">
+      <div class="mcd-popup-header">
+        <div class="mcd-popup-title">Create table</div>
+        <button class="mcd-popup-close" type="button" data-action="close" aria-label="Close">&times;</button>
+      </div>
+      <div class="mcd-popup-field-row">
+        <div class="field">
+          <label for="tableColumnCount">Columns</label>
+          <input id="tableColumnCount" name="columns" type="number" min="1" max="24" step="1" value="3" required />
+        </div>
+        <label class="mcd-popup-check">
+          <input name="columnHeaders" type="checkbox" checked />
+          <span>with column headers</span>
+        </label>
+      </div>
+      <div class="mcd-popup-field-row">
+        <div class="field">
+          <label for="tableRowCount">Rows</label>
+          <input id="tableRowCount" name="rows" type="number" min="1" max="200" step="1" value="3" required />
+        </div>
+        <label class="mcd-popup-check">
+          <input name="rowHeaders" type="checkbox" checked />
+          <span>with row headers</span>
+        </label>
+      </div>
+      <div class="mcd-popup-footer">
+        <button class="primary" type="submit">Create</button>
+      </div>
+    </form>
+  `);
+  const form = activeModal?.querySelector<HTMLFormElement>("#tableCreateForm");
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const columns = quantityFromForm(data.get("columns"), 1, 24, 3);
+    const rows = quantityFromForm(data.get("rows"), 1, 200, 3);
+    createTableAtLine(insertLine, columns, rows, {
+      showColumnHeaders: data.has("columnHeaders"),
+      showRowHeaders: data.has("rowHeaders"),
+    });
+    closeActiveModal();
+  });
+  activeModal?.querySelector<HTMLInputElement>("#tableColumnCount")?.focus();
+}
+
+function showImagePopup(insertLine: number): void {
+  showModal(`
+    <form class="mcd-popup" id="imageCreateForm">
+      <div class="mcd-popup-header">
+        <div class="mcd-popup-title">Create image</div>
+        <button class="mcd-popup-close" type="button" data-action="close" aria-label="Close">&times;</button>
+      </div>
+      <div class="field">
+        <label for="imageFileInput">Image</label>
+        <input id="imageFileInput" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" required />
+      </div>
+      <div class="field">
+        <label for="imageAltInput">Alt text</label>
+        <input id="imageAltInput" name="alt" type="text" required />
+      </div>
+      <div class="mcd-popup-footer">
+        <button class="primary" type="submit">Create</button>
+      </div>
+    </form>
+  `);
+  const form = activeModal?.querySelector<HTMLFormElement>("#imageCreateForm");
+  const fileInput = activeModal?.querySelector<HTMLInputElement>("#imageFileInput");
+  const altInput = activeModal?.querySelector<HTMLInputElement>("#imageAltInput");
+  fileInput?.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file && altInput && !altInput.value.trim()) {
+      altInput.value = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+    }
+  });
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const file = fileInput?.files?.[0];
+    const alt = altInput?.value.trim() ?? "";
+    if (!file || !alt) {
+      return;
+    }
+    void createImageAtLine(insertLine, file, alt).then(() => closeActiveModal());
+  });
+  fileInput?.focus();
+}
+
+function showModal(html: string): void {
+  closeActiveModal();
+  const backdrop = document.createElement("div");
+  backdrop.className = "mcd-popup-backdrop";
+  backdrop.innerHTML = html;
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeActiveModal();
+    }
+  });
+  backdrop.querySelector('[data-action="close"]')?.addEventListener("click", closeActiveModal);
+  activeModal = backdrop;
+  document.body.appendChild(backdrop);
+}
+
+function closeActiveModal(): void {
+  activeModal?.remove();
+  activeModal = undefined;
+}
+
+function quantityFromForm(value: FormDataEntryValue | null, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function markdownInsertionLine(target: InsertLineTarget): number {
+  if (!state) {
+    return 1;
+  }
+  const elements = Array.from(target.body.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      !child.classList.contains("mcd-insert-lines") &&
+      !child.classList.contains("empty-state"),
+  );
+  if (elements.length === 0) {
+    return 1;
+  }
+
+  const bodyTop = target.body.getBoundingClientRect().top;
+  let previousSource: SourceSpan | undefined;
+  let nextSource: SourceSpan | undefined;
+
+  for (const element of elements) {
+    const rect = element.getBoundingClientRect();
+    const top = rect.top - bodyTop;
+    const bottom = rect.bottom - bodyTop;
+    const source = sourceForPreviewElement(element);
+    if (target.y < top) {
+      nextSource = source;
+      break;
+    }
+    if (target.y <= bottom) {
+      if (target.y < top + (bottom - top) / 2) {
+        nextSource = source;
+      } else {
+        previousSource = source;
+      }
+      break;
+    }
+    previousSource = source ?? previousSource;
+  }
+
+  if (nextSource) {
+    return Math.max(1, nextSource.startLine);
+  }
+  if (previousSource) {
+    return previousSource.endLine + 1;
+  }
+  return markdownLineCount(state.markdown) + 1;
+}
+
+function sourceForPreviewElement(element: HTMLElement): SourceSpan | undefined {
+  const direct =
+    previewBlockSources.get(element) ??
+    inlineTextBindings.get(element)?.source;
+  if (direct) {
+    return direct;
+  }
+
+  const nested = element.querySelector<HTMLElement>(".inline-edit-target, table, img");
+  if (!nested) {
+    return undefined;
+  }
+  return previewBlockSources.get(nested) ?? inlineTextBindings.get(nested)?.source;
+}
+
+function createTableAtLine(
+  insertLine: number,
+  columnCount: number,
+  rowCount: number,
+  preferences: { showColumnHeaders: boolean; showRowHeaders: boolean },
+): void {
+  if (!state) {
+    return;
+  }
+  recordHistoryCheckpoint();
+  const id = nextTableId(state);
+  const viewPath = `tables/${id}.view.json`;
+  const entry: TableManifestEntry = {
+    id,
+    data: `tables/${id}.csv`,
+    schema: `tables/${id}.schema.json`,
+    views: {
+      default: viewPath,
+    },
+  };
+  const schema: TableSchema = {
+    id,
+    columns: [
+      {
+        name: RESERVED_ROW_HEADER_COLUMN,
+        type: "string",
+        label: "Rows",
+        nullable: false,
+      },
+      ...Array.from({ length: columnCount }, (_, index) => ({
+        name: `column_${index + 1}`,
+        type: "string",
+        label: `Column ${index + 1}`,
+        nullable: true,
+      })),
+    ],
+  };
+  const view: TableView = {
+    id: "default",
+    table: id,
+    display: "table",
+    columns: schema.columns.map((column) => ({
+      name: column.name,
+      label: column.label,
+    })),
+    style: {
+      showColumnHeaders: preferences.showColumnHeaders,
+      showRowHeaders: preferences.showRowHeaders,
+    },
+  };
+  const rows = Array.from({ length: rowCount }, (_unused, rowIndex) =>
+    Object.fromEntries(
+      schema.columns.map((column) => [
+        column.name,
+        column.name === RESERVED_ROW_HEADER_COLUMN ? String(rowIndex + 1) : "",
+      ]),
+    ),
+  );
+  const table: EditableTable = {
+    manifest: entry,
+    schema,
+    views: {
+      default: view,
+    },
+    rows,
+  };
+
+  state.manifest.tables ??= [];
+  state.manifest.tables.push(entry);
+  state.tables.push(table);
+  state.zip.file(entry.schema, `${JSON.stringify(schema, null, 2)}\n`);
+  state.zip.file(viewPath, `${JSON.stringify(view, null, 2)}\n`);
+  state.zip.file(entry.data, tableToCsv(table));
+  insertMarkdownBlockAtLine(insertLine, `:::table\ntable: ${id}\nview: default\n:::`);
+  renderTablesEditor();
+  markDirty();
+  setStatus(`Created table '${id}'.`);
+}
+
+async function createImageAtLine(insertLine: number, file: File, alt: string): Promise<void> {
+  if (!state) {
+    return;
+  }
+  const mediaType = imageMediaType(file);
+  if (!mediaType) {
+    setStatus("Unsupported image type.");
+    return;
+  }
+
+  recordHistoryCheckpoint();
+  const id = nextImageId(state, file.name);
+  const extension = imageExtension(file, mediaType);
+  const assetPath = `assets/${id}.${extension}`;
+  const metadataPath = `images/${id}.image.json`;
+  const metadata = {
+    id,
+    asset: assetPath,
+    mediaType,
+    role: "photo",
+    alt,
+  };
+
+  state.manifest.images ??= [];
+  state.manifest.images.push({ id, metadata: metadataPath });
+  state.manifest.assets ??= [];
+  state.manifest.assets.push({ id, path: assetPath });
+  state.zip.file(assetPath, new Uint8Array(await file.arrayBuffer()));
+  state.zip.file(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+  insertMarkdownBlockAtLine(insertLine, `:::image\nimage: ${id}\nalt: ${alt}\n:::`);
+  markDirty();
+  setStatus(`Created image '${id}'.`);
+}
+
+function insertMarkdownBlockAtLine(insertLine: number, block: string): void {
+  if (!state) {
+    return;
+  }
+  const lines = state.markdown.split(/\r\n|\r|\n/);
+  const hasContent = state.markdown.trim().length > 0;
+  if (!hasContent) {
+    state.markdown = block;
+    markdownEditor.value = state.markdown;
+    return;
+  }
+
+  const index = Math.min(Math.max(0, insertLine - 1), lines.length);
+  const before = lines.slice(0, index).join("\n").trimEnd();
+  const after = lines.slice(index).join("\n").trimStart();
+  state.markdown = [before, block, after].filter(Boolean).join("\n\n");
+  markdownEditor.value = state.markdown;
+}
+
+function nextTableId(packageState: PackageState): string {
+  const existing = new Set((packageState.manifest.tables ?? []).map((table) => table.id));
+  for (let index = 1; ; index += 1) {
+    const id = `table-${String(index).padStart(4, "0")}`;
+    if (!existing.has(id)) {
+      return id;
+    }
+  }
+}
+
+function nextImageId(packageState: PackageState, fileName: string): string {
+  const existing = new Set((packageState.manifest.images ?? []).map((image) => image.id));
+  const base = sanitizeId(fileName.replace(/\.[^.]+$/, "") || "image");
+  for (let index = 1; ; index += 1) {
+    const id = index === 1 ? base : `${base}-${index}`;
+    if (!existing.has(id)) {
+      return id;
+    }
+  }
+}
+
+function imageMediaType(file: File): string | undefined {
+  const allowed = new Set(["image/svg+xml", "image/png", "image/jpeg", "image/webp", "image/gif"]);
+  if (allowed.has(file.type)) {
+    return file.type;
+  }
+  const extension = file.name.toLowerCase().split(".").at(-1);
+  if (extension === "svg") return "image/svg+xml";
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  return undefined;
+}
+
+function imageExtension(file: File, mediaType: string): string {
+  const extension = file.name.toLowerCase().split(".").at(-1);
+  if (extension && ["svg", "png", "jpg", "jpeg", "webp", "gif"].includes(extension)) {
+    return extension === "jpg" ? "jpeg" : extension;
+  }
+  if (mediaType === "image/svg+xml") return "svg";
+  return mediaType.replace("image/", "").replace("jpeg", "jpeg");
 }
 
 function renderPagedPreview(html: string, annotationItems: AnnotationPreviewItem[] = []): void {
@@ -2908,7 +3559,14 @@ function applyStateToZip(packageState: PackageState): void {
   }
 
   for (const table of packageState.tables) {
+    packageState.zip.file(table.manifest.schema, `${JSON.stringify(table.schema, null, 2)}\n`);
     packageState.zip.file(table.manifest.data, tableToCsv(table));
+    for (const [viewId, view] of Object.entries(table.views)) {
+      const path = table.manifest.views?.[viewId];
+      if (path) {
+        packageState.zip.file(path, `${JSON.stringify(view, null, 2)}\n`);
+      }
+    }
   }
   for (const annotation of packageState.annotations) {
     packageState.zip.file(
