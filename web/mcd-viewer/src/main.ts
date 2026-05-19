@@ -390,7 +390,10 @@ app.innerHTML = `
           <section class="panel is-active" id="textPanel">
             <div class="field">
               <label for="markdownEditor">Markdown entrypoint</label>
-              <textarea id="markdownEditor" spellcheck="false" disabled></textarea>
+              <div class="markdown-editor-shell">
+                <pre id="markdownHighlight" class="markdown-highlight" aria-hidden="true"></pre>
+                <textarea id="markdownEditor" spellcheck="false" disabled></textarea>
+              </div>
             </div>
           </section>
           <section class="panel" id="tablesPanel">
@@ -440,6 +443,7 @@ const undoButton = byId<HTMLButtonElement>("undoButton");
 const redoButton = byId<HTMLButtonElement>("redoButton");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
+const markdownHighlight = byId<HTMLPreElement>("markdownHighlight");
 const markdownEditor = byId<HTMLTextAreaElement>("markdownEditor");
 const tablesEditor = byId<HTMLDivElement>("tablesEditor");
 const annotationsEditor = byId<HTMLDivElement>("annotationsEditor");
@@ -584,6 +588,7 @@ preview.addEventListener("keydown", (event: KeyboardEvent) => {
 });
 
 markdownEditor.addEventListener("input", () => {
+  syncMarkdownEditorHighlight();
   if (!state) {
     return;
   }
@@ -594,6 +599,8 @@ markdownEditor.addEventListener("input", () => {
   state.markdown = markdownEditor.value;
   markDirty();
 });
+
+markdownEditor.addEventListener("scroll", syncMarkdownEditorHighlightScroll);
 
 for (const tab of ["Text", "Tables", "Annotations"] as const) {
   byId<HTMLButtonElement>(`tab${tab}`).addEventListener("click", () => {
@@ -1167,7 +1174,7 @@ function hydrateUiFromState(): void {
     previewEditMode = false;
   }
   syncEditModeButton();
-  markdownEditor.value = state?.markdown ?? "";
+  setMarkdownEditorValue(state?.markdown ?? "");
   renderTablesEditor();
   renderAnnotationsEditor();
   preview.classList.toggle("is-empty", !hasState);
@@ -1177,6 +1184,176 @@ function hydrateUiFromState(): void {
     setStatus("");
     preview.innerHTML = emptyDropZoneHtml();
   }
+}
+
+function setMarkdownEditorValue(value: string): void {
+  markdownEditor.value = value;
+  syncMarkdownEditorHighlight();
+}
+
+function syncMarkdownEditorHighlight(): void {
+  markdownHighlight.innerHTML = markdownHighlightHtml(markdownEditor.value);
+  syncMarkdownEditorHighlightScroll();
+}
+
+function syncMarkdownEditorHighlightScroll(): void {
+  markdownHighlight.scrollTop = markdownEditor.scrollTop;
+  markdownHighlight.scrollLeft = markdownEditor.scrollLeft;
+}
+
+function markdownHighlightHtml(markdown: string): string {
+  const lines = markdown.split(/\r\n|\r|\n/);
+  let fencedDirective: "table" | "image" | undefined;
+  const highlighted = lines.map((line) => {
+    const result = markdownHighlightLine(line, fencedDirective);
+    fencedDirective = result.nextDirective;
+    return result.html;
+  });
+  const html = highlighted.join("\n");
+  return html || "\n";
+}
+
+function markdownHighlightLine(
+  line: string,
+  fencedDirective: "table" | "image" | undefined,
+): { html: string; nextDirective: "table" | "image" | undefined } {
+  const classes: Array<string | undefined> = Array.from({ length: line.length });
+  const mark = (start: number, end: number, className: string): void => {
+    for (let index = Math.max(0, start); index < Math.min(end, line.length); index += 1) {
+      classes[index] ??= className;
+    }
+  };
+  const markSyntax = (start: number, end: number): void => mark(start, end, "md-syntax");
+  const markEmbedded = (start: number, end: number): void => mark(start, end, "md-embedded-syntax");
+  const contentStart = line.match(/^\s*/)?.[0].length ?? 0;
+  const content = line.slice(contentStart);
+  let nextDirective = fencedDirective;
+
+  const openingDirective = /^(:::(table|image)\b.*)$/.exec(content);
+  if (openingDirective?.[1] && (openingDirective[2] === "table" || openingDirective[2] === "image")) {
+    markEmbedded(contentStart, line.length);
+    nextDirective = openingDirective[2];
+  } else if (fencedDirective && /^:::\s*$/.test(content)) {
+    markEmbedded(contentStart, contentStart + 3);
+    nextDirective = undefined;
+  } else if (fencedDirective) {
+    const field = /^([A-Za-z][\w-]*)(\s*:)/.exec(content);
+    if (field?.[1] && directiveFieldNames(fencedDirective).has(field[1])) {
+      markEmbedded(contentStart, contentStart + field[1].length + field[2].length);
+    }
+  }
+
+  markMarkdownLinks(line, markEmbedded);
+  markMarkdownTableSyntax(line, markEmbedded);
+  markBlockMarkdownSyntax(line, markSyntax);
+  markInlineMarkdownSyntax(line, markSyntax);
+
+  return { html: renderHighlightedLine(line, classes), nextDirective };
+}
+
+function directiveFieldNames(kind: "table" | "image"): Set<string> {
+  return kind === "table"
+    ? new Set(["table", "view", "display", "caption"])
+    : new Set(["image", "alt", "caption"]);
+}
+
+function markMarkdownLinks(line: string, markEmbedded: (start: number, end: number) => void): void {
+  for (const match of line.matchAll(/!?\[[^\]\n]*\]\([^\)\n]*\)/g)) {
+    const text = match[0];
+    const start = match.index ?? 0;
+    markEmbedded(start, start + text.length);
+  }
+
+  for (const match of line.matchAll(/!?\[[^\]\n]*\]\[[^\]\n]*\]/g)) {
+    const text = match[0];
+    const start = match.index ?? 0;
+    markEmbedded(start, start + text.length);
+  }
+
+  for (const match of line.matchAll(/<https?:\/\/[^>\s]+>/gi)) {
+    markEmbedded(match.index ?? 0, (match.index ?? 0) + match[0].length);
+  }
+}
+
+function markMarkdownTableSyntax(
+  line: string,
+  markEmbedded: (start: number, end: number) => void,
+): void {
+  if (!line.includes("|")) {
+    return;
+  }
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === "|") {
+      markEmbedded(index, index + 1);
+    }
+  }
+  const separator = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.exec(line);
+  if (!separator) {
+    return;
+  }
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === "-" || line[index] === ":") {
+      markEmbedded(index, index + 1);
+    }
+  }
+}
+
+function markBlockMarkdownSyntax(line: string, markSyntax: (start: number, end: number) => void): void {
+  const heading = /^(\s{0,3})(#{1,6})(?=\s|$)/.exec(line);
+  if (heading?.[2]) {
+    markSyntax(heading[1].length, heading[1].length + heading[2].length);
+  }
+
+  const quote = /^(\s{0,3})(>+)(?=\s|$)/.exec(line);
+  if (quote?.[2]) {
+    markSyntax(quote[1].length, quote[1].length + quote[2].length);
+  }
+
+  const list = /^(\s*)([-+*]|\d+[.)])(?=\s+)/.exec(line);
+  if (list?.[2]) {
+    markSyntax(list[1].length, list[1].length + list[2].length);
+  }
+
+  const fence = /^(\s{0,3})(`{3,}|~{3,})/.exec(line);
+  if (fence?.[2]) {
+    markSyntax(fence[1].length, fence[1].length + fence[2].length);
+  }
+
+  const thematicBreak = /^(\s{0,3})([-*_])(?:\s*\2){2,}\s*$/.exec(line);
+  if (thematicBreak) {
+    for (let index = 0; index < line.length; index += 1) {
+      if (line[index] === "-" || line[index] === "*" || line[index] === "_") {
+        markSyntax(index, index + 1);
+      }
+    }
+  }
+}
+
+function markInlineMarkdownSyntax(line: string, markSyntax: (start: number, end: number) => void): void {
+  for (let index = 0; index < line.length; index += 1) {
+    if ("*_~`".includes(line[index])) {
+      markSyntax(index, index + 1);
+    }
+  }
+}
+
+function renderHighlightedLine(line: string, classes: Array<string | undefined>): string {
+  if (!line) {
+    return "";
+  }
+  let html = "";
+  let index = 0;
+  while (index < line.length) {
+    const className = classes[index];
+    let end = index + 1;
+    while (end < line.length && classes[end] === className) {
+      end += 1;
+    }
+    const text = escapeHtml(line.slice(index, end));
+    html += className ? `<span class="${className}">${text}</span>` : text;
+    index = end;
+  }
+  return html;
 }
 
 function emptyDropZoneHtml(): string {
@@ -2756,7 +2933,7 @@ function replaceMarkdownSource(source: SourceSpan, replacement: string): SourceS
   const replacementLines = replacement.split("\n");
   lines.splice(startIndex, deleteCount, ...replacementLines);
   state.markdown = lines.join("\n");
-  markdownEditor.value = state.markdown;
+  setMarkdownEditorValue(state.markdown);
   return {
     ...source,
     endLine: source.startLine + replacementLines.length - 1,
@@ -4039,7 +4216,7 @@ function insertMarkdownBlockAtLine(insertLine: number, block: string): SourceSpa
   const hasContent = state.markdown.trim().length > 0;
   if (!hasContent) {
     state.markdown = block;
-    markdownEditor.value = state.markdown;
+    setMarkdownEditorValue(state.markdown);
     const blockLines = block.split("\n");
     return {
       startLine: 1,
@@ -4054,7 +4231,7 @@ function insertMarkdownBlockAtLine(insertLine: number, block: string): SourceSpa
   const after = lines.slice(index).join("\n").trimStart();
   const startLine = before ? markdownLineCount(before) + 2 : 1;
   state.markdown = [before, block, after].filter(Boolean).join("\n\n");
-  markdownEditor.value = state.markdown;
+  setMarkdownEditorValue(state.markdown);
   const blockLines = block.split("\n");
   return {
     startLine,

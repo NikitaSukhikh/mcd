@@ -426,6 +426,69 @@ textarea {
   resize: vertical;
 }
 
+.markdown-editor-shell {
+  display: grid;
+  height: 56vh;
+  min-height: 220px;
+  overflow: hidden;
+  position: relative;
+  resize: vertical;
+}
+
+.markdown-highlight,
+.markdown-editor-shell textarea {
+  grid-area: 1 / 1;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+  tab-size: 2;
+  white-space: pre-wrap;
+}
+
+.markdown-highlight {
+  background: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #202124;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  margin: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 7px 9px;
+  pointer-events: none;
+}
+
+.markdown-editor-shell textarea {
+  background: transparent;
+  caret-color: #202124;
+  color: transparent;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  resize: none;
+  z-index: 1;
+}
+
+.markdown-editor-shell textarea:disabled {
+  background: transparent;
+  color: transparent;
+  opacity: 1;
+  -webkit-text-fill-color: transparent;
+}
+
+.markdown-editor-shell textarea::selection {
+  background: rgb(15 118 110 / 18%);
+  color: transparent;
+}
+
+.md-syntax {
+  color: #1d4ed8;
+}
+
+.md-embedded-syntax {
+  color: #a45a17;
+}
+
 .item-card textarea {
   min-height: 96px;
 }
