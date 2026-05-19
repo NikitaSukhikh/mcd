@@ -25,6 +25,8 @@ const MIN_PREVIEW_TABLE_SCROLL_HEIGHT = 180;
 const LAZY_PREVIEW_TABLE_ROOT_MARGIN = 900;
 const VIRTUAL_TABLE_ROW_HEIGHT = 38;
 const VIRTUAL_TABLE_OVERSCAN_ROWS = 8;
+const EDITOR_VIRTUAL_TABLE_ROW_HEIGHT = 35;
+const EDITOR_VIRTUAL_TABLE_OVERSCAN_ROWS = 8;
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -237,6 +239,15 @@ interface PreviewVirtualTable {
   visibleEnd: number;
 }
 
+interface EditorVirtualTable {
+  table: EditableTable;
+  tbody: HTMLTableSectionElement;
+  wrapper: HTMLDivElement;
+  rowHeight: number;
+  visibleStart: number;
+  visibleEnd: number;
+}
+
 interface InsertLineTarget {
   body: HTMLDivElement;
   y: number;
@@ -365,6 +376,7 @@ let previewLazyTableObserver: IntersectionObserver | undefined;
 let tablesEditorObserver: IntersectionObserver | undefined;
 let previewLazyTables: PreviewLazyTable[] = [];
 let previewVirtualTables = new WeakMap<HTMLDivElement, PreviewVirtualTable>();
+let editorVirtualTables = new WeakMap<HTMLDivElement, EditorVirtualTable>();
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -1485,6 +1497,7 @@ function renderTablesEditor(): void {
 function resetTablesEditorObserver(): void {
   tablesEditorObserver?.disconnect();
   tablesEditorObserver = undefined;
+  editorVirtualTables = new WeakMap();
 }
 
 function observeTablesEditorGrid(
@@ -1536,6 +1549,7 @@ function renderEditorTableGrid(
   tableWrap.replaceChildren();
   const grid = renderTableGrid(table);
   tableWrap.appendChild(grid);
+  setupEditorVirtualTable(tableWrap, table, grid);
   attachTableInsertControls(tableFrame, tableWrap, table, grid);
 }
 
@@ -1562,42 +1576,120 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
   grid.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  table.rows.forEach((row, rowIndex) => {
-    const tr = document.createElement("tr");
-    for (const column of table.schema.columns) {
-      const td = document.createElement("td");
-      td.className = "data-table-cell";
-      const input = document.createElement("input");
-      input.value = row[column.name] ?? "";
-      input.setAttribute("aria-label", `${table.manifest.id} ${column.name} row ${rowIndex + 1}`);
-      input.addEventListener("input", () => {
-        if ((row[column.name] ?? "") === input.value) {
-          return;
-        }
-        recordHistoryCheckpoint({
-          coalesceKey: `table:${table.manifest.id}:${rowIndex}:${column.name}`,
-        });
-        row[column.name] = input.value;
-        markDirty();
-      });
-      td.appendChild(input);
-      tr.appendChild(td);
-    }
-    const actionTd = document.createElement("td");
-    actionTd.className = "data-table-cell data-table-action-cell";
-    const remove = document.createElement("button");
-    remove.className = "danger";
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.addEventListener("click", () => {
-      deleteTableRow(table, rowIndex);
-    });
-    actionTd.appendChild(remove);
-    tr.appendChild(actionTd);
-    tbody.appendChild(tr);
-  });
   grid.appendChild(tbody);
   return grid;
+}
+
+function setupEditorVirtualTable(
+  tableWrap: HTMLDivElement,
+  table: EditableTable,
+  grid: HTMLTableElement,
+): void {
+  const tbody = grid.querySelector<HTMLTableSectionElement>("tbody");
+  if (!tbody) {
+    throw new Error("Missing table body.");
+  }
+  const virtualTable: EditorVirtualTable = {
+    table,
+    tbody,
+    wrapper: tableWrap,
+    rowHeight: EDITOR_VIRTUAL_TABLE_ROW_HEIGHT,
+    visibleStart: -1,
+    visibleEnd: -1,
+  };
+  editorVirtualTables.set(tableWrap, virtualTable);
+  tableWrap.addEventListener(
+    "scroll",
+    () => {
+      if (tableWrap.contains(document.activeElement)) {
+        return;
+      }
+      renderVirtualEditorTableRows(virtualTable);
+    },
+    { passive: true },
+  );
+  renderVirtualEditorTableRows(virtualTable);
+  window.requestAnimationFrame(() => renderVirtualEditorTableRows(virtualTable));
+}
+
+function renderVirtualEditorTableRows(virtualTable: EditorVirtualTable): void {
+  const rowCount = virtualTable.table.rows.length;
+  const viewportHeight = Math.max(virtualTable.wrapper.clientHeight, 220);
+  const visibleRows = Math.ceil(viewportHeight / virtualTable.rowHeight) + EDITOR_VIRTUAL_TABLE_OVERSCAN_ROWS * 2;
+  const start = Math.max(
+    0,
+    Math.floor(virtualTable.wrapper.scrollTop / virtualTable.rowHeight) - EDITOR_VIRTUAL_TABLE_OVERSCAN_ROWS,
+  );
+  const end = Math.min(rowCount, start + visibleRows);
+  if (start === virtualTable.visibleStart && end === virtualTable.visibleEnd) {
+    return;
+  }
+
+  virtualTable.visibleStart = start;
+  virtualTable.visibleEnd = end;
+  virtualTable.tbody.replaceChildren();
+  virtualTable.tbody.appendChild(
+    tableSpacerRow(virtualTable.table.schema.columns.length + 1, start * virtualTable.rowHeight),
+  );
+  for (let rowIndex = start; rowIndex < end; rowIndex += 1) {
+    virtualTable.tbody.appendChild(renderEditorTableRow(virtualTable.table, rowIndex));
+  }
+  virtualTable.tbody.appendChild(
+    tableSpacerRow(
+      virtualTable.table.schema.columns.length + 1,
+      Math.max(0, rowCount - end) * virtualTable.rowHeight,
+    ),
+  );
+}
+
+function renderEditorTableRow(table: EditableTable, rowIndex: number): HTMLTableRowElement {
+  const row = table.rows[rowIndex];
+  const tr = document.createElement("tr");
+  tr.dataset.rowIndex = String(rowIndex);
+  for (const column of table.schema.columns) {
+    const td = document.createElement("td");
+    td.className = "data-table-cell";
+    const input = document.createElement("input");
+    input.value = row?.[column.name] ?? "";
+    input.setAttribute("aria-label", `${table.manifest.id} ${column.name} row ${rowIndex + 1}`);
+    input.addEventListener("input", () => {
+      if (!row || (row[column.name] ?? "") === input.value) {
+        return;
+      }
+      recordHistoryCheckpoint({
+        coalesceKey: `table:${table.manifest.id}:${rowIndex}:${column.name}`,
+      });
+      row[column.name] = input.value;
+      markDirty();
+    });
+    td.appendChild(input);
+    tr.appendChild(td);
+  }
+  const actionTd = document.createElement("td");
+  actionTd.className = "data-table-cell data-table-action-cell";
+  const remove = document.createElement("button");
+  remove.className = "danger";
+  remove.type = "button";
+  remove.textContent = "Remove";
+  remove.addEventListener("click", () => {
+    deleteTableRow(table, rowIndex);
+  });
+  actionTd.appendChild(remove);
+  tr.appendChild(actionTd);
+  return tr;
+}
+
+function tableSpacerRow(columnCount: number, height: number): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  row.className = "virtual-table-spacer";
+  row.setAttribute("aria-hidden", "true");
+  const cell = document.createElement("td");
+  cell.colSpan = Math.max(1, columnCount);
+  cell.style.height = `${height}px`;
+  cell.style.padding = "0";
+  cell.style.border = "0";
+  row.appendChild(cell);
+  return row;
 }
 
 function renderTableHeaderInput(table: EditableTable, column: TableColumn): HTMLInputElement {
@@ -1916,7 +2008,7 @@ function nearestColumnEdge(
   columnCount: number,
   threshold: number,
 ): { insertIndex: number; x: number; y: number; distance: number } | undefined {
-  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tr"));
+  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("thead tr, tbody tr[data-row-index]"));
   let nearest: { insertIndex: number; x: number; y: number; distance: number } | undefined;
   for (const row of rows) {
     const cells = Array.from(row.children).slice(0, columnCount);
@@ -1984,10 +2076,14 @@ function nearestRowEdge(
   columnCount: number,
   threshold: number,
 ): { insertIndex: number; x: number; y: number; distance: number } | undefined {
-  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-index]"));
   let nearest: { insertIndex: number; x: number; y: number; distance: number } | undefined;
   for (let index = 0; index <= rows.length; index += 1) {
     const row = rows[index] ?? rows[index - 1];
+    const rowIndex = Number(row?.dataset.rowIndex);
+    if (!Number.isInteger(rowIndex)) {
+      continue;
+    }
     const cells = Array.from(row?.children ?? []).slice(0, columnCount);
     for (const cell of cells) {
       const rect = cell.getBoundingClientRect();
@@ -1998,7 +2094,7 @@ function nearestRowEdge(
       const distance = Math.abs(event.clientY - y);
       if (distance <= threshold && (!nearest || distance < nearest.distance)) {
         nearest = {
-          insertIndex: index,
+          insertIndex: index === rows.length ? rowIndex + 1 : rowIndex,
           x: rect.left + rect.width / 2,
           y,
           distance,
@@ -2014,9 +2110,13 @@ function nearestRowDeleteEdge(
   grid: HTMLTableElement,
   threshold: number,
 ): { rowIndex: number; x: number; y: number; distance: number } | undefined {
-  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-index]"));
   let nearest: { rowIndex: number; x: number; y: number; distance: number } | undefined;
-  rows.forEach((row, rowIndex) => {
+  rows.forEach((row) => {
+    const rowIndex = Number(row.dataset.rowIndex);
+    if (!Number.isInteger(rowIndex)) {
+      return;
+    }
     const rect = row.children[0]?.getBoundingClientRect();
     if (!rect || event.clientY < rect.top || event.clientY > rect.bottom) {
       return;

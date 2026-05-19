@@ -694,6 +694,10 @@ textarea {
   outline-offset: -2px;
 }
 
+.virtual-table-spacer td {
+  background: transparent;
+}
+
 .table-insert-control {
   align-items: center;
   background: rgb(15 118 110 / 50%);
