@@ -17,6 +17,8 @@ import "./styles.css";
 const MCD_MIMETYPE = "application/vnd.mcd+zip";
 const UNSAVED_CHANGES_PROMPT = "Save changes?";
 const DEFAULT_ENTRYPOINT = "content/main.md";
+const HISTORY_LIMIT = 20;
+const HISTORY_GROUP_IDLE_MS = 1200;
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -255,6 +257,16 @@ interface PackageState {
   plainMarkdownInput: boolean;
 }
 
+interface StateSnapshot {
+  manifest: Manifest;
+  markdown: string;
+  tables: EditableTable[];
+  annotations: EditableAnnotation[];
+  pageMap?: PageMap;
+  pageMapPath?: string;
+  removedAnnotationPaths: string[];
+}
+
 interface SaveFilePickerWindow extends Window {
   showSaveFilePicker?: (options: {
     suggestedName?: string;
@@ -280,6 +292,11 @@ let sidebarExpanded = false;
 let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
 let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
 let locallySavedAnnotationIds = new Set<string>();
+let undoStack: StateSnapshot[] = [];
+let redoStack: StateSnapshot[] = [];
+let activeHistoryGroupKey: string | undefined;
+let historyGroupTimer: number | undefined;
+let savedContentKey = "";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -304,9 +321,17 @@ app.innerHTML = `
     <main class="workspace is-sidebar-folded" id="workspace">
       <section class="editor-pane" id="editorPane">
         <div class="sidebar-strip">
-          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-expanded="false" aria-label="Unfold sidebar" title="Unfold sidebar">
-            <span class="sidebar-toggle-icon" aria-hidden="true"></span>
-          </button>
+          <div class="sidebar-control-stack">
+            <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-expanded="false" aria-label="Unfold sidebar" title="Unfold sidebar">
+              <span class="sidebar-toggle-icon" aria-hidden="true"></span>
+            </button>
+            <button id="undoButton" class="sidebar-action" type="button" aria-label="Undo" title="Undo" disabled>
+              <span class="sidebar-history-icon is-undo" aria-hidden="true"></span>
+            </button>
+            <button id="redoButton" class="sidebar-action" type="button" aria-label="Redo" title="Redo" disabled>
+              <span class="sidebar-history-icon is-redo" aria-hidden="true"></span>
+            </button>
+          </div>
         </div>
         <div class="editor-content">
           <input id="fileInput" class="hidden-input" type="file" accept=".mcd,application/zip,application/vnd.mcd+zip,text/markdown,text/plain" />
@@ -363,6 +388,13 @@ const saveButtons = [
   byId<HTMLButtonElement>("floatingSaveButton"),
 ];
 const sidebarToggle = byId<HTMLButtonElement>("sidebarToggle");
+const foundSidebarStrip = sidebarToggle.closest<HTMLElement>(".sidebar-strip");
+if (!foundSidebarStrip) {
+  throw new Error("Missing sidebar strip.");
+}
+const sidebarStrip = foundSidebarStrip;
+const undoButton = byId<HTMLButtonElement>("undoButton");
+const redoButton = byId<HTMLButtonElement>("redoButton");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
 const markdownEditor = byId<HTMLTextAreaElement>("markdownEditor");
@@ -379,6 +411,12 @@ createButton.addEventListener("click", () => {
 });
 sidebarToggle.addEventListener("click", () => {
   setSidebarExpanded(!sidebarExpanded);
+});
+undoButton.addEventListener("click", () => {
+  void undoOperation();
+});
+redoButton.addEventListener("click", () => {
+  void redoOperation();
 });
 
 fileInput.addEventListener("change", () => {
@@ -485,6 +523,10 @@ markdownEditor.addEventListener("input", () => {
   if (!state) {
     return;
   }
+  if (state.markdown === markdownEditor.value) {
+    return;
+  }
+  recordHistoryCheckpoint({ coalesceKey: "markdown-editor" });
   state.markdown = markdownEditor.value;
   markDirty();
 });
@@ -499,6 +541,7 @@ addAnnotationButton.addEventListener("click", () => {
   if (!state) {
     return;
   }
+  recordHistoryCheckpoint();
   const id = nextAnnotationId(state);
   state.annotations.push({
     id,
@@ -526,6 +569,158 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
+function captureStateSnapshot(): StateSnapshot | undefined {
+  if (!state) {
+    return undefined;
+  }
+  return {
+    manifest: cloneJson(state.manifest),
+    markdown: state.markdown,
+    tables: cloneJson(state.tables),
+    annotations: cloneJson(state.annotations),
+    pageMap: state.pageMap ? cloneJson(state.pageMap) : undefined,
+    pageMapPath: state.pageMapPath,
+    removedAnnotationPaths: [...state.removedAnnotationPaths].sort(),
+  };
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function snapshotKey(snapshot: StateSnapshot): string {
+  return JSON.stringify(snapshot);
+}
+
+function contentKey(snapshot: StateSnapshot): string {
+  return JSON.stringify({
+    markdown: snapshot.markdown,
+    tables: snapshot.tables,
+    annotations: snapshot.annotations,
+  });
+}
+
+function recordHistoryCheckpoint(options: { coalesceKey?: string } = {}): void {
+  const snapshot = captureStateSnapshot();
+  if (!snapshot) {
+    return;
+  }
+
+  if (options.coalesceKey) {
+    if (activeHistoryGroupKey === options.coalesceKey) {
+      startHistoryGroup(options.coalesceKey);
+      return;
+    }
+  } else {
+    clearHistoryGroup();
+  }
+
+  pushHistorySnapshot(undoStack, snapshot);
+  redoStack = [];
+  if (options.coalesceKey) {
+    startHistoryGroup(options.coalesceKey);
+  }
+  syncHistoryButtons();
+}
+
+function pushHistorySnapshot(stack: StateSnapshot[], snapshot: StateSnapshot): void {
+  const previous = stack.at(-1);
+  if (previous && snapshotKey(previous) === snapshotKey(snapshot)) {
+    return;
+  }
+  stack.push(snapshot);
+  if (stack.length > HISTORY_LIMIT) {
+    stack.splice(0, stack.length - HISTORY_LIMIT);
+  }
+}
+
+function startHistoryGroup(key: string): void {
+  activeHistoryGroupKey = key;
+  if (historyGroupTimer) {
+    window.clearTimeout(historyGroupTimer);
+  }
+  historyGroupTimer = window.setTimeout(() => {
+    if (activeHistoryGroupKey === key) {
+      clearHistoryGroup();
+    }
+  }, HISTORY_GROUP_IDLE_MS);
+}
+
+function clearHistoryGroup(): void {
+  activeHistoryGroupKey = undefined;
+  if (historyGroupTimer) {
+    window.clearTimeout(historyGroupTimer);
+    historyGroupTimer = undefined;
+  }
+}
+
+function resetHistory(): void {
+  clearHistoryGroup();
+  undoStack = [];
+  redoStack = [];
+  const snapshot = captureStateSnapshot();
+  savedContentKey = snapshot ? contentKey(snapshot) : "";
+  syncHistoryButtons();
+}
+
+async function undoOperation(): Promise<void> {
+  if (!state || undoStack.length === 0) {
+    return;
+  }
+  const current = captureStateSnapshot();
+  const previous = undoStack.pop();
+  if (!current || !previous) {
+    return;
+  }
+  pushHistorySnapshot(redoStack, current);
+  await restoreStateSnapshot(previous);
+}
+
+async function redoOperation(): Promise<void> {
+  if (!state || redoStack.length === 0) {
+    return;
+  }
+  const current = captureStateSnapshot();
+  const next = redoStack.pop();
+  if (!current || !next) {
+    return;
+  }
+  pushHistorySnapshot(undoStack, current);
+  await restoreStateSnapshot(next);
+}
+
+async function restoreStateSnapshot(snapshot: StateSnapshot): Promise<void> {
+  if (!state) {
+    return;
+  }
+  clearHistoryGroup();
+  state.manifest = cloneJson(snapshot.manifest);
+  state.markdown = snapshot.markdown;
+  state.tables = cloneJson(snapshot.tables);
+  state.annotations = cloneJson(snapshot.annotations);
+  state.pageMap = snapshot.pageMap ? cloneJson(snapshot.pageMap) : undefined;
+  state.pageMapPath = snapshot.pageMapPath;
+  state.removedAnnotationPaths = new Set(snapshot.removedAnnotationPaths);
+
+  const annotationIds = new Set(state.annotations.map((annotation) => annotation.id));
+  expandedAnnotationIds = new Set([...expandedAnnotationIds].filter((id) => annotationIds.has(id)));
+  locallySavedAnnotationIds = new Set(
+    [...locallySavedAnnotationIds].filter((id) => annotationIds.has(id)),
+  );
+
+  const restored = captureStateSnapshot();
+  state.dirty = restored ? contentKey(restored) !== savedContentKey : true;
+  hydrateUiFromState();
+  await renderAndValidate();
+  syncHistoryButtons();
+}
+
+function syncHistoryButtons(): void {
+  const hasState = Boolean(state);
+  undoButton.disabled = !hasState || undoStack.length === 0;
+  redoButton.disabled = !hasState || redoStack.length === 0;
+}
+
 async function loadFile(file: File): Promise<void> {
   setStatus(`Opening ${file.name}...`);
   clearDiagnostics();
@@ -534,6 +729,7 @@ async function loadFile(file: File): Promise<void> {
     state = await loadPackage(file.name, bytes);
     expandedAnnotationIds = new Set();
     locallySavedAnnotationIds = new Set();
+    resetHistory();
     previewPane.scrollTop = 0;
     window.scrollTo({ top: 0, left: 0 });
     hydrateUiFromState();
@@ -542,6 +738,7 @@ async function loadFile(file: File): Promise<void> {
     state = undefined;
     expandedAnnotationIds = new Set();
     locallySavedAnnotationIds = new Set();
+    resetHistory();
     hydrateUiFromState();
     showError(error);
   }
@@ -554,6 +751,7 @@ async function createDocument(): Promise<void> {
   expandedAnnotationIds = new Set();
   locallySavedAnnotationIds = new Set();
   previewEditMode = false;
+  resetHistory();
   previewPane.scrollTop = 0;
   window.scrollTo({ top: 0, left: 0 });
   setActiveTab("text");
@@ -910,6 +1108,7 @@ function hydrateUiFromState(): void {
   renderAnnotationsEditor();
   preview.classList.toggle("is-empty", !hasState);
   syncFloatingActions();
+  syncHistoryButtons();
   if (!state) {
     setStatus("");
     preview.innerHTML = emptyDropZoneHtml();
@@ -949,7 +1148,7 @@ function syncFloatingActions(): void {
   const isVisible = Boolean(state) && hasScrolledDocument;
   floatingActions.hidden = !isVisible;
   floatingActions.classList.toggle("is-visible", isVisible);
-  sidebarToggle.parentElement?.classList.toggle("is-pinned", hasScrolledDocument);
+  sidebarStrip.classList.toggle("is-pinned", hasScrolledDocument);
 }
 
 function renderTablesEditor(): void {
@@ -985,6 +1184,7 @@ function renderTablesEditor(): void {
     card
       .querySelector<HTMLButtonElement>('[data-action="add-row"]')
       ?.addEventListener("click", () => {
+        recordHistoryCheckpoint();
         const row = Object.fromEntries(table.schema.columns.map((column) => [column.name, ""]));
         table.rows.push(row);
         renderTablesEditor();
@@ -1019,6 +1219,12 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
       input.value = row[column.name] ?? "";
       input.setAttribute("aria-label", `${table.manifest.id} ${column.name} row ${rowIndex + 1}`);
       input.addEventListener("input", () => {
+        if ((row[column.name] ?? "") === input.value) {
+          return;
+        }
+        recordHistoryCheckpoint({
+          coalesceKey: `table:${table.manifest.id}:${rowIndex}:${column.name}`,
+        });
         row[column.name] = input.value;
         markDirty();
       });
@@ -1031,6 +1237,7 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
     remove.type = "button";
     remove.textContent = "Remove";
     remove.addEventListener("click", () => {
+      recordHistoryCheckpoint();
       table.rows.splice(rowIndex, 1);
       renderTablesEditor();
       markDirty();
@@ -1058,6 +1265,7 @@ function renderAnnotationsEditor(): void {
   state.annotations.forEach((annotation, index) => {
     const expanded = expandedAnnotationIds.has(annotation.id);
     const panelId = `annotation-panel-${index}-${sanitizeId(annotation.id)}`;
+    const annotationHistoryKey = annotation.originalMetadata ?? annotation.metadata ?? annotation.id;
     const card = document.createElement("section");
     card.className = `item-card annotation-card${expanded ? " is-expanded" : ""}`;
     card.innerHTML = `
@@ -1078,7 +1286,7 @@ function renderAnnotationsEditor(): void {
       ${expanded ? annotationDetailsHtml(annotation, packageState, panelId) : ""}
     `;
 
-    bindAnnotationInput(card, annotation, "id", (value) => {
+    bindAnnotationInput(card, annotation, "id", annotationHistoryKey, (value) => {
       const previousId = annotation.id;
       const previous = annotation.metadata;
       annotation.id = sanitizeId(value);
@@ -1093,19 +1301,19 @@ function renderAnnotationsEditor(): void {
         locallySavedAnnotationIds.add(annotation.id);
       }
     });
-    bindAnnotationInput(card, annotation, "kind", (value) => {
+    bindAnnotationInput(card, annotation, "kind", annotationHistoryKey, (value) => {
       annotation.kind = value;
     });
-    bindAnnotationInput(card, annotation, "status", (value) => {
+    bindAnnotationInput(card, annotation, "status", annotationHistoryKey, (value) => {
       annotation.status = value;
     });
-    bindAnnotationInput(card, annotation, "author", (value) => {
+    bindAnnotationInput(card, annotation, "author", annotationHistoryKey, (value) => {
       annotation.author = value;
     });
-    bindAnnotationInput(card, annotation, "body", (value) => {
+    bindAnnotationInput(card, annotation, "body", annotationHistoryKey, (value) => {
       annotation.body = value;
     });
-    bindAnnotationInput(card, annotation, "page", (value) => {
+    bindAnnotationInput(card, annotation, "page", annotationHistoryKey, (value) => {
       annotation.page = value;
       if (state && value) {
         annotation.line = firstLineForPage(state.markdown, Number(value), state.pageMap).toString();
@@ -1117,7 +1325,7 @@ function renderAnnotationsEditor(): void {
       updateAnnotationTargetFromLocation(annotation);
       updateAnnotationTargetTextarea(card, annotation);
     });
-    bindAnnotationInput(card, annotation, "line", (value) => {
+    bindAnnotationInput(card, annotation, "line", annotationHistoryKey, (value) => {
       annotation.line = normalizeLineInput(value, state?.markdown ?? "");
       if (state && annotation.line) {
         annotation.page = inferPageForLine(state.markdown, Number(annotation.line), state.pageMap);
@@ -1129,15 +1337,15 @@ function renderAnnotationsEditor(): void {
       updateAnnotationTargetFromLocation(annotation);
       updateAnnotationTargetTextarea(card, annotation);
     });
-    bindAnnotationInput(card, annotation, "targetText", (value) => {
+    bindAnnotationInput(card, annotation, "targetText", annotationHistoryKey, (value) => {
       annotation.targetText = value;
       syncAnnotationLocationFromTarget(annotation);
       updateAnnotationLocationInputs(card, annotation);
     });
-    bindAnnotationInput(card, annotation, "labels", (value) => {
+    bindAnnotationInput(card, annotation, "labels", annotationHistoryKey, (value) => {
       annotation.labels = value;
     });
-    bindAnnotationInput(card, annotation, "created", (value) => {
+    bindAnnotationInput(card, annotation, "created", annotationHistoryKey, (value) => {
       annotation.created = value;
     });
     card
@@ -1161,6 +1369,7 @@ function renderAnnotationsEditor(): void {
     card
       .querySelector<HTMLButtonElement>('[data-field="remove"]')
       ?.addEventListener("click", () => {
+        recordHistoryCheckpoint();
         state?.removedAnnotationPaths.add(annotation.metadata);
         if (annotation.originalMetadata) {
           state?.removedAnnotationPaths.add(annotation.originalMetadata);
@@ -1260,6 +1469,7 @@ function bindAnnotationInput(
   root: HTMLElement,
   annotation: EditableAnnotation,
   field: keyof EditableAnnotation,
+  historyKey: string,
   update: (value: string) => void,
 ): void {
   const input = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
@@ -1269,7 +1479,20 @@ function bindAnnotationInput(
     return;
   }
   const handleChange = () => {
+    const before = captureStateSnapshot();
+    const undoLengthBefore = undoStack.length;
+    recordHistoryCheckpoint({
+      coalesceKey: `annotation:${historyKey}:${String(field)}`,
+    });
     update(input.value);
+    const after = captureStateSnapshot();
+    if (before && after && snapshotKey(before) === snapshotKey(after)) {
+      if (undoStack.length > undoLengthBefore) {
+        undoStack.pop();
+      }
+      syncHistoryButtons();
+      return;
+    }
     if (field === "id") {
       const title = root.querySelector<HTMLDivElement>(".item-title");
       if (title) {
@@ -1280,8 +1503,11 @@ function bindAnnotationInput(
     resetAnnotationSaveButton(root);
     markDirty();
   };
-  input.addEventListener("input", handleChange);
-  input.addEventListener("change", handleChange);
+  if (input instanceof HTMLSelectElement) {
+    input.addEventListener("change", handleChange);
+  } else {
+    input.addEventListener("input", handleChange);
+  }
 }
 
 function resetAnnotationSaveButton(root: HTMLElement): void {
@@ -1342,6 +1568,7 @@ function markDirty(options: { render?: boolean } = {}): void {
   }
   state.dirty = true;
   fileNameEl.textContent = `${state.fileName} (edited)`;
+  syncHistoryButtons();
   if (options.render !== false) {
     queueRender();
   }
@@ -1789,6 +2016,7 @@ function updateMarkdownFromHeadingSplit(binding: InlineHeadingSplitBinding): voi
     ...continuationLines,
   ].join("\n");
   binding.source = replaceMarkdownSource(binding.source, replacement);
+  markDirty({ render: false });
 }
 
 function updateMarkdownFromInlineText(element: HTMLElement, binding: InlineTextBinding): void {
@@ -1854,6 +2082,11 @@ function replaceMarkdownSource(source: SourceSpan, replacement: string): SourceS
   const lines = state.markdown.split(/\r\n|\r|\n/);
   const startIndex = Math.max(0, source.startLine - 1);
   const deleteCount = Math.max(1, source.endLine - source.startLine + 1);
+  const existing = lines.slice(startIndex, startIndex + deleteCount).join("\n");
+  if (existing === replacement) {
+    return source;
+  }
+  recordHistoryCheckpoint({ coalesceKey: "preview-markdown" });
   const replacementLines = replacement.split("\n");
   lines.splice(startIndex, deleteCount, ...replacementLines);
   state.markdown = lines.join("\n");
@@ -2146,7 +2379,14 @@ function bindInlineTable(
         if (!previewEditMode) {
           return;
         }
-        row[column.name] = parseInlineTableValue(editableText(cell), column);
+        const next = parseInlineTableValue(editableText(cell), column);
+        if ((row[column.name] ?? "") === next) {
+          return;
+        }
+        recordHistoryCheckpoint({
+          coalesceKey: `preview-table:${column.name}:${rowIndex}`,
+        });
+        row[column.name] = next;
         markDirty({ render: false });
       });
     });
@@ -2627,7 +2867,6 @@ function applyStateToZip(packageState: PackageState): void {
   for (const path of packageState.removedAnnotationPaths) {
     packageState.zip.remove(path);
   }
-  packageState.removedAnnotationPaths.clear();
 
   for (const table of packageState.tables) {
     packageState.zip.file(table.manifest.data, tableToCsv(table));
@@ -2772,7 +3011,10 @@ async function saveDocument(): Promise<void> {
       URL.revokeObjectURL(link.href);
     }
     state.dirty = false;
+    const snapshot = captureStateSnapshot();
+    savedContentKey = snapshot ? contentKey(snapshot) : savedContentKey;
     fileNameEl.textContent = state.fileName;
+    syncHistoryButtons();
     setStatus("Saved current package bytes.");
   } catch (error) {
     showError(error);

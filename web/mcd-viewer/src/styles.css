@@ -208,7 +208,14 @@ button:disabled {
   opacity: 1;
 }
 
-.sidebar-toggle {
+.sidebar-control-stack {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.sidebar-toggle,
+.sidebar-action {
   align-items: center;
   display: inline-flex;
   height: 34px;
@@ -217,7 +224,8 @@ button:disabled {
   width: 34px;
 }
 
-.sidebar-strip.is-pinned .sidebar-toggle {
+.sidebar-strip.is-pinned .sidebar-toggle,
+.sidebar-strip.is-pinned .sidebar-action {
   box-shadow: 0 8px 22px rgb(28 39 49 / 18%);
 }
 
@@ -263,6 +271,17 @@ button:disabled {
 
 .sidebar-toggle[aria-expanded="true"] .sidebar-toggle-icon::after {
   transform: rotate(-45deg);
+}
+
+.sidebar-history-icon {
+  background: url("/arrow_back.png") center / 15px 15px no-repeat;
+  display: block;
+  height: 17px;
+  width: 17px;
+}
+
+.sidebar-history-icon.is-redo {
+  transform: scaleX(-1);
 }
 
 .editor-content {
