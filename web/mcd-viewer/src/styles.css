@@ -92,6 +92,41 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.floating-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  right: 24px;
+  top: 24px;
+  transform: translateY(8px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  z-index: 20;
+}
+
+.floating-actions[hidden] {
+  display: none;
+}
+
+.floating-actions.is-visible {
+  opacity: 0.5;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.floating-actions.is-visible:hover,
+.floating-actions.is-visible:focus-within {
+  opacity: 1;
+}
+
+.floating-actions button {
+  box-shadow: 0 8px 22px rgb(28 39 49 / 18%);
+  min-width: 72px;
+}
+
 .primary {
   background: #0f766e;
   border-color: #0f766e;
@@ -106,6 +141,11 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
   min-height: 0;
+  position: relative;
+}
+
+.workspace.is-sidebar-folded {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .editor-pane,
@@ -117,6 +157,121 @@ button:disabled {
 .editor-pane {
   background: #ffffff;
   border-right: 1px solid #dde3e8;
+  display: block;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+
+.workspace.is-sidebar-folded .editor-pane {
+  background: transparent;
+  border-right: 0;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: visible;
+  width: 0;
+}
+
+.workspace.is-sidebar-expanded .editor-pane {
+  align-self: start;
+  height: 100vh;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-strip {
+  background: transparent;
+  border: 0;
+  left: 6px;
+  opacity: 1;
+  padding: 0;
+  position: absolute;
+  top: 8px;
+  transform: translateY(0);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  z-index: 3;
+}
+
+.sidebar-strip.is-pinned {
+  left: 6px;
+  opacity: 0.5;
+  position: fixed;
+  top: 8px;
+  z-index: 20;
+}
+
+.sidebar-strip.is-pinned:hover,
+.sidebar-strip.is-pinned:focus-within {
+  opacity: 1;
+}
+
+.sidebar-toggle {
+  align-items: center;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  width: 34px;
+}
+
+.sidebar-strip.is-pinned .sidebar-toggle {
+  box-shadow: 0 8px 22px rgb(28 39 49 / 18%);
+}
+
+.sidebar-toggle-icon {
+  display: block;
+  height: 16px;
+  position: relative;
+  width: 16px;
+}
+
+.sidebar-toggle-icon::before,
+.sidebar-toggle-icon::after {
+  content: "";
+  position: absolute;
+}
+
+.sidebar-toggle[aria-expanded="false"] .sidebar-toggle-icon::before {
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  inset: 2px;
+}
+
+.sidebar-toggle[aria-expanded="false"] .sidebar-toggle-icon::after {
+  border-top: 2px solid currentColor;
+  left: 4px;
+  right: 4px;
+  top: 6px;
+}
+
+.sidebar-toggle[aria-expanded="true"] .sidebar-toggle-icon::before,
+.sidebar-toggle[aria-expanded="true"] .sidebar-toggle-icon::after {
+  background: currentColor;
+  border-radius: 1px;
+  height: 2px;
+  left: 2px;
+  right: 2px;
+  top: 7px;
+}
+
+.sidebar-toggle[aria-expanded="true"] .sidebar-toggle-icon::before {
+  transform: rotate(45deg);
+}
+
+.sidebar-toggle[aria-expanded="true"] .sidebar-toggle-icon::after {
+  transform: rotate(-45deg);
+}
+
+.editor-content {
+  height: 100%;
+  overflow: auto;
+}
+
+.workspace.is-sidebar-folded .editor-content {
+  display: none;
 }
 
 .drop-zone {
@@ -164,6 +319,10 @@ button:disabled {
 .status-panel {
   border-bottom: 1px solid #e4e8ec;
   padding: 12px 16px;
+}
+
+.workspace.is-sidebar-expanded .status-panel {
+  border-bottom: 0;
 }
 
 .status-line {
@@ -395,9 +554,20 @@ textarea {
   margin-top: 10px;
 }
 
+#annotationsPanel .table-actions {
+  justify-content: flex-end;
+}
+
 .preview-pane {
   background: #eef1f4;
   padding: 22px;
+  position: relative;
+  z-index: 1;
+}
+
+.workspace.is-sidebar-folded .preview-pane {
+  grid-column: 1 / -1;
+  grid-row: 1;
 }
 
 .preview-document {
@@ -696,6 +866,11 @@ textarea {
     justify-content: flex-start;
   }
 
+  .floating-actions {
+    right: 16px;
+    top: 16px;
+  }
+
   .editor-pane {
     border-bottom: 1px solid #dde3e8;
     border-right: 0;
@@ -717,7 +892,8 @@ textarea {
   }
 
   .topbar,
-  .editor-pane {
+  .editor-pane,
+  .floating-actions {
     display: none;
   }
 

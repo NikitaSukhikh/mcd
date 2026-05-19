@@ -266,6 +266,7 @@ let renderTimer: number | undefined;
 let assetUrls: string[] = [];
 let expandedAnnotationIds = new Set<string>();
 let previewEditMode = false;
+let sidebarExpanded = false;
 let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
 let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
 let locallySavedAnnotationIds = new Set<string>();
@@ -285,63 +286,86 @@ app.innerHTML = `
       <div class="file-name" id="fileName"></div>
       <div class="toolbar">
         <button id="openButton" type="button">Upload</button>
-        <button id="validateButton" type="button" disabled>Validate</button>
-        <button id="editModeButton" type="button" disabled aria-pressed="false">Edit</button>
-        <button id="saveButton" class="primary" type="button" disabled>Save</button>
+        <button id="topEditModeButton" type="button" disabled aria-pressed="false">Edit</button>
+        <button id="topSaveButton" class="primary" type="button" disabled>Save</button>
       </div>
     </header>
-    <main class="workspace">
-      <section class="editor-pane">
-        <input id="fileInput" class="hidden-input" type="file" accept=".mcd,application/zip,application/vnd.mcd+zip,text/markdown,text/plain" />
-        <div class="status-panel">
-          <div class="status-line" id="statusLine">Open a document to edit Markdown, annotations, and CSV-backed tables.</div>
-          <div class="diagnostics" id="diagnostics"></div>
+    <main class="workspace is-sidebar-folded" id="workspace">
+      <section class="editor-pane" id="editorPane">
+        <div class="sidebar-strip">
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-expanded="false" aria-label="Unfold sidebar" title="Unfold sidebar">
+            <span class="sidebar-toggle-icon" aria-hidden="true"></span>
+          </button>
         </div>
-        <nav class="tabs" aria-label="Editor sections">
-          <button class="tab" id="tabText" type="button" aria-selected="true">Text</button>
-          <button class="tab" id="tabTables" type="button" aria-selected="false">Tables</button>
-          <button class="tab" id="tabAnnotations" type="button" aria-selected="false">Annotations</button>
-        </nav>
-        <section class="panel is-active" id="textPanel">
-          <div class="field">
-            <label for="markdownEditor">Markdown entrypoint</label>
-            <textarea id="markdownEditor" spellcheck="false" disabled></textarea>
+        <div class="editor-content">
+          <input id="fileInput" class="hidden-input" type="file" accept=".mcd,application/zip,application/vnd.mcd+zip,text/markdown,text/plain" />
+          <div class="status-panel">
+            <div class="status-line" id="statusLine"></div>
+            <div class="diagnostics" id="diagnostics"></div>
           </div>
-        </section>
-        <section class="panel" id="tablesPanel">
-          <div class="list-stack" id="tablesEditor"></div>
-        </section>
-        <section class="panel" id="annotationsPanel">
-          <div class="table-actions">
-            <button id="addAnnotationButton" type="button" disabled>Add annotation</button>
-          </div>
-          <div class="list-stack" id="annotationsEditor"></div>
-        </section>
+          <nav class="tabs" aria-label="Editor sections">
+            <button class="tab" id="tabText" type="button" aria-selected="true">Text</button>
+            <button class="tab" id="tabTables" type="button" aria-selected="false">Tables</button>
+            <button class="tab" id="tabAnnotations" type="button" aria-selected="false">Annotations</button>
+          </nav>
+          <section class="panel is-active" id="textPanel">
+            <div class="field">
+              <label for="markdownEditor">Markdown entrypoint</label>
+              <textarea id="markdownEditor" spellcheck="false" disabled></textarea>
+            </div>
+          </section>
+          <section class="panel" id="tablesPanel">
+            <div class="list-stack" id="tablesEditor"></div>
+          </section>
+          <section class="panel" id="annotationsPanel">
+            <div class="table-actions">
+              <button id="addAnnotationButton" class="primary" type="button" disabled>Add annotation</button>
+            </div>
+            <div class="list-stack" id="annotationsEditor"></div>
+          </section>
+        </div>
       </section>
-      <section class="preview-pane">
+      <section class="preview-pane" id="previewPane">
         <article class="preview-document is-empty" id="preview">
           ${emptyDropZoneHtml()}
         </article>
       </section>
     </main>
+    <div class="floating-actions" id="floatingActions" aria-label="Document actions" hidden>
+      <button id="floatingEditModeButton" type="button" disabled aria-pressed="false">Edit</button>
+      <button id="floatingSaveButton" class="primary" type="button" disabled>Save</button>
+    </div>
   </div>
 `;
 
 const fileNameEl = byId<HTMLDivElement>("fileName");
+const workspace = byId<HTMLElement>("workspace");
 const fileInput = byId<HTMLInputElement>("fileInput");
 const openButton = byId<HTMLButtonElement>("openButton");
-const validateButton = byId<HTMLButtonElement>("validateButton");
-const editModeButton = byId<HTMLButtonElement>("editModeButton");
-const saveButton = byId<HTMLButtonElement>("saveButton");
+const editModeButtons = [
+  byId<HTMLButtonElement>("topEditModeButton"),
+  byId<HTMLButtonElement>("floatingEditModeButton"),
+];
+const saveButtons = [
+  byId<HTMLButtonElement>("topSaveButton"),
+  byId<HTMLButtonElement>("floatingSaveButton"),
+];
+const sidebarToggle = byId<HTMLButtonElement>("sidebarToggle");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
 const markdownEditor = byId<HTMLTextAreaElement>("markdownEditor");
 const tablesEditor = byId<HTMLDivElement>("tablesEditor");
 const annotationsEditor = byId<HTMLDivElement>("annotationsEditor");
 const addAnnotationButton = byId<HTMLButtonElement>("addAnnotationButton");
+const previewPane = byId<HTMLElement>("previewPane");
 const preview = byId<HTMLElement>("preview");
+const floatingActions = byId<HTMLDivElement>("floatingActions");
 
 openButton.addEventListener("click", () => fileInput.click());
+sidebarToggle.addEventListener("click", () => {
+  setSidebarExpanded(!sidebarExpanded);
+});
+
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
   if (file) {
@@ -350,17 +374,20 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 
-validateButton.addEventListener("click", () => {
-  void renderAndValidate();
-});
+for (const button of editModeButtons) {
+  button.addEventListener("click", () => {
+    setPreviewEditMode(!previewEditMode);
+  });
+}
 
-editModeButton.addEventListener("click", () => {
-  setPreviewEditMode(!previewEditMode);
-});
+for (const button of saveButtons) {
+  button.addEventListener("click", () => {
+    void saveDocument();
+  });
+}
 
-saveButton.addEventListener("click", () => {
-  void saveDocument();
-});
+previewPane.addEventListener("scroll", syncFloatingActions);
+window.addEventListener("scroll", syncFloatingActions);
 
 window.addEventListener("beforeunload", (event) => {
   if (!state?.dirty) {
@@ -492,6 +519,8 @@ async function loadFile(file: File): Promise<void> {
     state = await loadPackage(file.name, bytes);
     expandedAnnotationIds = new Set();
     locallySavedAnnotationIds = new Set();
+    previewPane.scrollTop = 0;
+    window.scrollTo({ top: 0, left: 0 });
     hydrateUiFromState();
     await renderAndValidate();
   } catch (error) {
@@ -800,9 +829,12 @@ function hydrateUiFromState(): void {
     ? `${state.fileName}${state.dirty ? " (edited)" : ""}`
     : "";
   markdownEditor.disabled = !hasState;
-  validateButton.disabled = !hasState;
-  editModeButton.disabled = !hasState;
-  saveButton.disabled = !hasState;
+  for (const button of editModeButtons) {
+    button.disabled = !hasState;
+  }
+  for (const button of saveButtons) {
+    button.disabled = !hasState;
+  }
   addAnnotationButton.disabled = !hasState;
   if (!hasState) {
     previewEditMode = false;
@@ -812,8 +844,9 @@ function hydrateUiFromState(): void {
   renderTablesEditor();
   renderAnnotationsEditor();
   preview.classList.toggle("is-empty", !hasState);
+  syncFloatingActions();
   if (!state) {
-    setStatus("Open a document to edit Markdown, annotations, and CSV-backed tables.");
+    setStatus("");
     preview.innerHTML = emptyDropZoneHtml();
   }
 }
@@ -835,6 +868,23 @@ function setActiveTab(tab: ActiveTab): void {
     );
     byId<HTMLElement>(`${name}Panel`).classList.toggle("is-active", selected);
   }
+}
+
+function setSidebarExpanded(expanded: boolean): void {
+  sidebarExpanded = expanded;
+  workspace.classList.toggle("is-sidebar-folded", !expanded);
+  workspace.classList.toggle("is-sidebar-expanded", expanded);
+  sidebarToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  sidebarToggle.setAttribute("aria-label", expanded ? "Fold sidebar" : "Unfold sidebar");
+  sidebarToggle.title = expanded ? "Fold sidebar" : "Unfold sidebar";
+}
+
+function syncFloatingActions(): void {
+  const hasScrolledDocument = previewPane.scrollTop > 80 || window.scrollY > 80;
+  const isVisible = Boolean(state) && hasScrolledDocument;
+  floatingActions.hidden = !isVisible;
+  floatingActions.classList.toggle("is-visible", isVisible);
+  sidebarToggle.parentElement?.classList.toggle("is-pinned", hasScrolledDocument);
 }
 
 function renderTablesEditor(): void {
@@ -1249,9 +1299,11 @@ function setPreviewEditMode(enabled: boolean): void {
 }
 
 function syncEditModeButton(): void {
-  editModeButton.textContent = previewEditMode ? "Done" : "Edit";
-  editModeButton.setAttribute("aria-pressed", previewEditMode ? "true" : "false");
-  editModeButton.classList.toggle("primary", previewEditMode);
+  for (const button of editModeButtons) {
+    button.textContent = previewEditMode ? "Done" : "Edit";
+    button.setAttribute("aria-pressed", previewEditMode ? "true" : "false");
+    button.classList.toggle("primary", previewEditMode);
+  }
 }
 
 function queueRender(): void {
@@ -1282,9 +1334,7 @@ async function renderAndValidate(): Promise<void> {
     const markdown = validation.valid ? doc.markdown({ expandTables: true }) : state.markdown;
     await renderMarkdownPreview(markdown, blocks);
     setStatus(
-      validation.valid
-        ? "Document is valid. Preview is rendered from the current in-memory package."
-        : "Document has validation errors. Preview is rendered from the Markdown editor.",
+      validation.valid ? "" : "Document has validation errors. Preview is rendered from the Markdown editor.",
     );
   } catch (error) {
     await renderMarkdownPreview(state.markdown);
