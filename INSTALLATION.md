@@ -1,0 +1,155 @@
+# MCD Developer Installation Guide
+
+This guide covers installing MCD tooling and bindings from public package
+registries.
+
+## CLI
+
+The CLI package is published on crates.io as `mcd-cli` and installs the `mcd`
+binary.
+
+```bash
+cargo install mcd-cli --version 0.1.0-alpha.0
+```
+
+Verify:
+
+```bash
+mcd --help
+mcd validate examples/minimal/minimal.mcd
+```
+
+If you are working from a source checkout, use:
+
+```bash
+cargo run -p mcd-cli -- --help
+cargo run -p mcd-cli -- validate examples/minimal/minimal.mcd
+```
+
+## Rust
+
+Add the parser/validator crate:
+
+```bash
+cargo add mcd-core@0.1.0-alpha.0
+```
+
+Add the HTML renderer when your application needs rendered output:
+
+```bash
+cargo add mcd-render@0.1.0-alpha.0
+```
+
+The raw WebAssembly-facing crate is also published:
+
+```bash
+cargo add mcd-wasm@0.1.0-alpha.0
+```
+
+For command-line integration from Rust projects, install `mcd-cli` as shown in
+the CLI section.
+
+## Python
+
+The PyPI distribution is `mcdee`; the Python import package is `mcd`.
+
+```bash
+pip install mcdee
+```
+
+Example:
+
+```python
+import mcd
+
+doc = mcd.open("report.mcd")
+validation = doc.validate()
+blocks = doc.blocks()
+markdown = doc.markdown(expand_tables=True)
+```
+
+Optional pandas support:
+
+```bash
+pip install "mcdee[pandas]"
+```
+
+## TypeScript and JavaScript
+
+The npm package is `@mcd-nix/parser`.
+
+```bash
+npm install @mcd-nix/parser
+```
+
+Example:
+
+```ts
+import { openMcd } from "@mcd-nix/parser";
+
+const bytes = await fetch("report.mcd").then((response) => response.arrayBuffer());
+const doc = await openMcd(bytes);
+
+const validation = doc.validate();
+const markdown = doc.markdown({ expandTables: true });
+```
+
+The npm package embeds the MCD WebAssembly parser and does not require the
+`mcd` CLI.
+
+## PHP
+
+The Composer package is `mcd-nix/parser`.
+
+```bash
+composer require mcd-nix/parser
+```
+
+The PHP wrapper delegates parsing and conversion work to the `mcd` CLI, so the
+CLI must also be installed and available on `PATH`.
+
+```bash
+cargo install mcd-cli --version 0.1.0-alpha.0
+```
+
+Example:
+
+```php
+<?php
+
+use Mcd\Client;
+
+$mcd = new Client();
+$doc = $mcd->open('report.mcd');
+
+$validation = $doc->validate();
+$blocks = $doc->blocks();
+$tables = $doc->tables();
+$markdown = $doc->markdown(expandTables: true);
+```
+
+If the `mcd` binary is not on `PATH`, pass its full path:
+
+```php
+$mcd = new Client('/path/to/mcd');
+```
+
+## Package Names
+
+| Ecosystem | Package | Notes |
+| --- | --- | --- |
+| CLI | `mcd-cli` | Installs the `mcd` binary through Cargo. |
+| Rust | `mcd-core` | Parser, validator, and exporter. |
+| Rust | `mcd-render` | HTML renderer. |
+| Rust | `mcd-wasm` | Raw WebAssembly bindings. |
+| Python | `mcdee` | Import as `mcd`. |
+| npm | `@mcd-nix/parser` | Includes embedded WebAssembly. |
+| Composer | `mcd-nix/parser` | Requires the `mcd` CLI. |
+
+## Troubleshooting
+
+- If `cargo install mcd-cli` fails on Windows with a missing `kernel32.lib`,
+  install or repair the Windows SDK / Visual Studio C++ build tools.
+- If PHP cannot find `mcd`, run `mcd --help` in the same shell and either fix
+  `PATH` or pass the binary path to `new Mcd\Client(...)`.
+- If TypeScript bundling fails, make sure your runtime supports ES modules.
