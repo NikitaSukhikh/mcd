@@ -734,6 +734,7 @@ textarea {
 
 .inline-editable {
   cursor: text;
+  white-space: pre-wrap;
 }
 
 .inline-editable:focus,

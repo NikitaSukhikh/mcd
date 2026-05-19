@@ -22,7 +22,7 @@ type ActiveTab = "text" | "tables" | "annotations";
 
 marked.use({
   gfm: true,
-  breaks: false,
+  breaks: true,
   renderer: {
     code({ text, lang }: Tokens.Code): string | false {
       if (lang?.trim().toLowerCase() === "math") {
@@ -207,6 +207,7 @@ interface InlineTableBinding {
 
 interface InlineTextBinding {
   block?: EditableTextBlock;
+  source?: SourceSpan;
 }
 
 interface EditableAnnotation {
@@ -1650,14 +1651,13 @@ function isEditableTextBlock(
 function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock): void {
   element.tabIndex = 0;
   element.classList.add("inline-edit-target");
-  inlineTextBindings.set(element, { block });
+  inlineTextBindings.set(element, { block, source: block?.source });
 
   element.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
     }
-    event.preventDefault();
-    element.blur();
+    event.stopPropagation();
   });
   element.addEventListener("input", () => {
     if (!previewEditMode) {
@@ -1665,19 +1665,24 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
     }
     const binding = inlineTextBindings.get(element);
     if (binding?.block) {
-      updateMarkdownFromInlineText(element, binding.block);
+      updateMarkdownFromInlineText(element, binding);
     }
   });
 }
 
-function updateMarkdownFromInlineText(element: HTMLElement, block: EditableTextBlock): void {
-  if (!state || !block.source) {
+function updateMarkdownFromInlineText(element: HTMLElement, binding: InlineTextBinding): void {
+  if (!state || !binding.block || !binding.source) {
     return;
   }
 
   const text = editableText(element);
-  const replacement = markdownReplacementForInlineText(element, block, block.source, text);
-  replaceMarkdownSource(block.source, replacement);
+  const replacement = markdownReplacementForInlineText(
+    element,
+    binding.block,
+    binding.source,
+    text,
+  );
+  binding.source = replaceMarkdownSource(binding.source, replacement);
   markDirty({ render: false });
 }
 
@@ -1721,16 +1726,22 @@ function markdownListReplacement(element: HTMLElement, source: SourceSpan): stri
     .join("\n");
 }
 
-function replaceMarkdownSource(source: SourceSpan, replacement: string): void {
+function replaceMarkdownSource(source: SourceSpan, replacement: string): SourceSpan {
   if (!state) {
-    return;
+    return source;
   }
   const lines = state.markdown.split(/\r\n|\r|\n/);
   const startIndex = Math.max(0, source.startLine - 1);
   const deleteCount = Math.max(1, source.endLine - source.startLine + 1);
-  lines.splice(startIndex, deleteCount, ...replacement.split("\n"));
+  const replacementLines = replacement.split("\n");
+  lines.splice(startIndex, deleteCount, ...replacementLines);
   state.markdown = lines.join("\n");
   markdownEditor.value = state.markdown;
+  return {
+    ...source,
+    endLine: source.startLine + replacementLines.length - 1,
+    endColumn: replacementLines.at(-1)?.length ?? source.startColumn,
+  };
 }
 
 function editableText(element: HTMLElement): string {
@@ -1740,7 +1751,66 @@ function editableText(element: HTMLElement): string {
   )) {
     ignored.remove();
   }
-  return (clone.textContent ?? "").replace(/\u00a0/g, " ").trim();
+  return editableNodeText(clone, clone)
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function editableNodeText(node: Node, root: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent ?? "";
+  }
+  if (!(node instanceof HTMLElement)) {
+    return Array.from(node.childNodes)
+      .map((child) => editableNodeText(child, root))
+      .join("");
+  }
+  if (node.tagName === "BR") {
+    return "\n";
+  }
+
+  const text = Array.from(node.childNodes)
+    .map((child) => editableNodeText(child, root))
+    .join("");
+  if (node !== root && isEditableLineBreakElement(node)) {
+    return `\n${text}\n`;
+  }
+  return text;
+}
+
+function isEditableLineBreakElement(element: HTMLElement): boolean {
+  return [
+    "ADDRESS",
+    "ARTICLE",
+    "ASIDE",
+    "BLOCKQUOTE",
+    "DD",
+    "DIV",
+    "DL",
+    "DT",
+    "FIGCAPTION",
+    "FIGURE",
+    "FOOTER",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "HEADER",
+    "LI",
+    "MAIN",
+    "NAV",
+    "OL",
+    "P",
+    "PRE",
+    "SECTION",
+    "TR",
+    "UL",
+  ].includes(element.tagName);
 }
 
 function normalizedEditableText(value: string): string {
@@ -1949,14 +2019,13 @@ function bindInlineTable(
         if (event.key !== "Enter") {
           return;
         }
-        event.preventDefault();
-        cell.blur();
+        event.stopPropagation();
       });
       cell.addEventListener("input", () => {
         if (!previewEditMode) {
           return;
         }
-        row[column.name] = parseInlineTableValue(cell.textContent ?? "", column);
+        row[column.name] = parseInlineTableValue(editableText(cell), column);
         markDirty({ render: false });
       });
     });
