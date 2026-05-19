@@ -75,7 +75,18 @@ python -m maturin publish
 ## Publish PHP
 
 Packagist publishes from Git tags. After pushing the release tag, submit or
-update the `mcd/parser` package in Packagist with this repository URL.
+update the `mcd-nix/parser` package in Packagist with this repository URL.
+
+Packagist package settings:
+
+| Field | Value |
+| --- | --- |
+| Repository URL | `https://github.com/NikitaSukhikh/mcd-php` |
+| Package name | `mcd-nix/parser` |
+| Composer file | `composer.json` |
+
+The `mcd-php` repository is a split package containing the contents of
+`bindings/php` at its root.
 
 ## Tag
 

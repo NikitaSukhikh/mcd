@@ -1,17 +1,17 @@
 {
-  "name": "mcd/parser",
+  "name": "mcd-nix/parser",
   "description": "PHP wrapper for Markdown CSV Document packages",
   "type": "library",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/mcd-format/mcd",
+  "homepage": "https://github.com/NikitaSukhikh/mcd-php",
   "authors": [
     {
       "name": "MCD contributors"
     }
   ],
   "support": {
-    "issues": "https://github.com/mcd-format/mcd/issues",
-    "source": "https://github.com/mcd-format/mcd"
+    "issues": "https://github.com/NikitaSukhikh/mcd-php/issues",
+    "source": "https://github.com/NikitaSukhikh/mcd-php"
   },
   "require": {
     "php": ">=8.1"

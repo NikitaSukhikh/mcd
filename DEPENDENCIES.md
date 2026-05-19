@@ -135,7 +135,7 @@ pandas (optional)
 
 ```json
 {
-  "name": "mcd/parser",
+  "name": "mcd-nix/parser",
   "require": {
     "php": ">=8.1"
   },

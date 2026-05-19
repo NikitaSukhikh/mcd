@@ -54,7 +54,7 @@ PHP projects can install the Composer package. The PHP wrapper delegates to the
 `mcd` CLI, so install the CLI first and make sure it is on `PATH`.
 
 ```bash
-composer require mcd/parser
+composer require mcd-nix/parser
 ```
 
 The examples below use the installed `mcd` command. If you have not installed

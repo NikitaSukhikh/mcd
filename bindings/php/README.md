@@ -9,17 +9,16 @@ the CLI first:
 cargo install --path crates/mcd-cli
 ```
 
-Then install the PHP wrapper from this directory:
+To install from a checkout of this package:
 
 ```bash
-cd bindings/php
 composer install
 ```
 
 From Packagist, use:
 
 ```bash
-composer require mcd/parser
+composer require mcd-nix/parser
 ```
 
 ```php
