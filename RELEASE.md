@@ -52,6 +52,16 @@ npm publish --access public
 
 The PyPI distribution is `mcdee`; the import package remains `mcd`.
 
+PyPI Trusted Publisher settings:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `mcdee` |
+| Owner | `NikitaSukhikh` |
+| Repository name | `mcd` |
+| Workflow name | `release.yml` |
+| Environment name | `pypi` |
+
 ```bash
 cd bindings/python
 python -m pip install --upgrade maturin
