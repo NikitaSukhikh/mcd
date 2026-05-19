@@ -600,6 +600,22 @@ textarea {
   min-width: 140px;
 }
 
+.data-table .data-table-header-input {
+  background: transparent;
+  color: #40515e;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 0;
+  padding: 0;
+}
+
+.data-table .data-table-header-input:focus,
+.data-table .data-table-header-input:focus-visible {
+  background: #ffffff;
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+}
+
 .table-insert-control {
   align-items: center;
   background: rgb(15 118 110 / 50%);

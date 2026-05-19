@@ -1251,13 +1251,11 @@ function renderTablesEditor(): void {
       .querySelector<HTMLButtonElement>('[data-action="add-row"]')
       ?.addEventListener("click", () => {
         recordHistoryCheckpoint();
-        const row = Object.fromEntries(
-          table.schema.columns.map((column) => [
-            column.name,
-            column.name === RESERVED_ROW_HEADER_COLUMN ? String(table.rows.length + 1) : "",
-          ]),
-        );
-        table.rows.push(row);
+        const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
+        table.rows.push(createEmptyTableRow(table, table.rows.length));
+        if (shouldRenumberRowHeaders) {
+          renumberReservedRowHeaders(table);
+        }
         renderTablesEditor();
         markDirty();
       });
@@ -1273,7 +1271,11 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
   for (const column of table.schema.columns) {
     const th = document.createElement("th");
     th.className = "data-table-cell";
-    th.textContent = column.label ? `${column.label} (${column.name})` : column.name;
+    if (column.name !== RESERVED_ROW_HEADER_COLUMN) {
+      th.appendChild(renderTableHeaderInput(table, column));
+    } else {
+      th.setAttribute("aria-label", "Row headers");
+    }
     header.appendChild(th);
   }
   const actionTh = document.createElement("th");
@@ -1313,7 +1315,11 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
     remove.textContent = "Remove";
     remove.addEventListener("click", () => {
       recordHistoryCheckpoint();
+      const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
       table.rows.splice(rowIndex, 1);
+      if (shouldRenumberRowHeaders) {
+        renumberReservedRowHeaders(table);
+      }
       renderTablesEditor();
       markDirty();
     });
@@ -1325,18 +1331,51 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
   return grid;
 }
 
+function renderTableHeaderInput(table: EditableTable, column: TableColumn): HTMLInputElement {
+  const input = document.createElement("input");
+  input.className = "data-table-header-input";
+  input.value = column.label ?? column.name;
+  input.setAttribute("aria-label", `${table.manifest.id} ${column.name} column name`);
+  input.title = column.name;
+  input.addEventListener("input", () => {
+    const next = input.value.replace(/\s+/g, " ").trim();
+    if (!next || next === (column.label ?? column.name)) {
+      return;
+    }
+    recordHistoryCheckpoint({
+      coalesceKey: `sidebar-table-header:${table.manifest.id}:${column.name}`,
+    });
+    setTableColumnLabelAcrossViews(table, column.name, next);
+    markDirty();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    input.blur();
+  });
+  return input;
+}
+
 function insertTableRow(table: EditableTable, insertIndex: number): void {
   recordHistoryCheckpoint();
-  const row = Object.fromEntries(
-    table.schema.columns.map((column) => [
-      column.name,
-      column.name === RESERVED_ROW_HEADER_COLUMN ? String(insertIndex + 1) : "",
-    ]),
-  );
-  table.rows.splice(insertIndex, 0, row);
-  renumberReservedRowHeaders(table);
+  const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
+  table.rows.splice(insertIndex, 0, createEmptyTableRow(table, insertIndex));
+  if (shouldRenumberRowHeaders) {
+    renumberReservedRowHeaders(table);
+  }
   renderTablesEditor();
   markDirty();
+}
+
+function createEmptyTableRow(table: EditableTable, rowIndex: number): Record<string, string> {
+  return Object.fromEntries(
+    table.schema.columns.map((column) => [
+      column.name,
+      column.name === RESERVED_ROW_HEADER_COLUMN ? String(rowIndex + 1) : "",
+    ]),
+  );
 }
 
 function insertTableColumn(table: EditableTable, insertIndex: number): void {
@@ -1494,16 +1533,21 @@ function nearestColumnEdge(
   let nearest: { insertIndex: number; x: number; y: number; distance: number } | undefined;
   for (const row of rows) {
     const cells = Array.from(row.children).slice(0, columnCount);
-    for (let index = 1; index < cells.length; index += 1) {
-      const rect = cells[index].getBoundingClientRect();
+    for (let index = 1; index <= cells.length; index += 1) {
+      const cell = cells[index] ?? cells[index - 1];
+      const rect = cell?.getBoundingClientRect();
+      if (!rect) {
+        continue;
+      }
       if (event.clientY < rect.top || event.clientY > rect.bottom) {
         continue;
       }
-      const distance = Math.abs(event.clientX - rect.left);
+      const x = index === cells.length ? rect.right : rect.left;
+      const distance = Math.abs(event.clientX - x);
       if (distance <= threshold && (!nearest || distance < nearest.distance)) {
         nearest = {
           insertIndex: index,
-          x: rect.left,
+          x,
           y: rect.top + rect.height / 2,
           distance,
         };
@@ -1521,19 +1565,21 @@ function nearestRowEdge(
 ): { insertIndex: number; x: number; y: number; distance: number } | undefined {
   const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr"));
   let nearest: { insertIndex: number; x: number; y: number; distance: number } | undefined;
-  for (let index = 1; index < rows.length; index += 1) {
-    const cells = Array.from(rows[index].children).slice(0, columnCount);
+  for (let index = 1; index <= rows.length; index += 1) {
+    const row = rows[index] ?? rows[index - 1];
+    const cells = Array.from(row?.children ?? []).slice(0, columnCount);
     for (const cell of cells) {
       const rect = cell.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX > rect.right) {
         continue;
       }
-      const distance = Math.abs(event.clientY - rect.top);
+      const y = index === rows.length ? rect.bottom : rect.top;
+      const distance = Math.abs(event.clientY - y);
       if (distance <= threshold && (!nearest || distance < nearest.distance)) {
         nearest = {
           insertIndex: index,
           x: rect.left + rect.width / 2,
-          y: rect.top,
+          y,
           distance,
         };
       }
@@ -1561,12 +1607,23 @@ function hideTableInsertControls(...controls: HTMLButtonElement[]): void {
 }
 
 function renumberReservedRowHeaders(table: EditableTable): void {
-  if (!table.schema.columns.some((column) => column.name === RESERVED_ROW_HEADER_COLUMN)) {
+  if (!hasReservedRowHeaderColumn(table)) {
     return;
   }
   table.rows.forEach((row, rowIndex) => {
     row[RESERVED_ROW_HEADER_COLUMN] = String(rowIndex + 1);
   });
+}
+
+function usesDefaultReservedRowHeaders(table: EditableTable): boolean {
+  return (
+    hasReservedRowHeaderColumn(table) &&
+    table.rows.every((row, rowIndex) => row[RESERVED_ROW_HEADER_COLUMN] === String(rowIndex + 1))
+  );
+}
+
+function hasReservedRowHeaderColumn(table: EditableTable): boolean {
+  return table.schema.columns.some((column) => column.name === RESERVED_ROW_HEADER_COLUMN);
 }
 
 function renderAnnotationsEditor(): void {
@@ -3066,6 +3123,36 @@ function setTableColumnLabel(
   }
 }
 
+function setTableColumnLabelAcrossViews(
+  table: EditableTable,
+  columnName: string,
+  label: string,
+): void {
+  const schemaColumn = table.schema.columns.find((column) => column.name === columnName);
+  const previousLabel = schemaColumn?.label ?? columnName;
+  if (schemaColumn) {
+    schemaColumn.label = label;
+  }
+
+  for (const view of Object.values(table.views)) {
+    const viewColumn = view.columns?.find((column) => column.name === columnName);
+    if (viewColumn) {
+      viewColumn.label = label;
+    }
+    for (const encoding of tableChartEncodings(view)) {
+      if (encoding.column === columnName && (!encoding.label || encoding.label === previousLabel)) {
+        encoding.label = label;
+      }
+    }
+  }
+}
+
+function tableChartEncodings(view: TableView): TableChartEncoding[] {
+  return [view.chart?.x, view.chart?.y, view.chart?.series, view.chart?.grouping].filter(
+    (encoding): encoding is TableChartEncoding => Boolean(encoding),
+  );
+}
+
 function bindInlineTableCell(
   cell: HTMLTableCellElement,
   binding: InlineTableBinding,
@@ -3641,7 +3728,6 @@ function createTableAtLine(
       {
         name: RESERVED_ROW_HEADER_COLUMN,
         type: "string",
-        label: "Rows",
         nullable: false,
       },
       ...Array.from({ length: columnCount }, (_, index) => ({
