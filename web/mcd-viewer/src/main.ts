@@ -222,6 +222,13 @@ interface InsertLineTarget {
   y: number;
 }
 
+interface PendingInsertionAlignment {
+  kind: "table" | "image";
+  id: string;
+  pageNumber: number;
+  desiredTop: number;
+}
+
 type EditableTextBlock = Extract<
   DocumentBlock,
   { type: "heading" | "paragraph" | "list" | "quote" }
@@ -229,6 +236,12 @@ type EditableTextBlock = Extract<
 
 interface InlineTableBinding {
   row: Record<string, string>;
+  column: TableViewColumn & { label: string; schema: TableColumn };
+}
+
+interface InlineTableHeaderBinding {
+  table: EditableTable;
+  placement: TablePlacement;
   column: TableViewColumn & { label: string; schema: TableColumn };
 }
 
@@ -316,14 +329,17 @@ let previewEditMode = false;
 let sidebarExpanded = false;
 let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
 let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
+let inlineTableHeaderBindings = new WeakMap<HTMLElement, InlineTableHeaderBinding>();
 let previewBlockSources = new WeakMap<HTMLElement, SourceSpan>();
 let locallySavedAnnotationIds = new Set<string>();
+let pendingInsertionAlignments: PendingInsertionAlignment[] = [];
 let undoStack: StateSnapshot[] = [];
 let redoStack: StateSnapshot[] = [];
 let activeHistoryGroupKey: string | undefined;
 let historyGroupTimer: number | undefined;
 let savedContentKey = "";
 let activeModal: HTMLElement | undefined;
+let previewAutoDoneTimer: number | undefined;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -537,6 +553,21 @@ preview.addEventListener("click", (event) => {
   target.setAttribute("tabindex", "-1");
   target.scrollIntoView({ behavior: "smooth", block: "center" });
   target.focus({ preventScroll: true });
+});
+
+preview.addEventListener("focusout", (event) => {
+  if (!state || !previewEditMode) {
+    return;
+  }
+  const target = event.target as Element | null;
+  if (!target?.closest(".inline-editable, .inline-edit-target, .preview-table-wrap")) {
+    return;
+  }
+  const next = event.relatedTarget as Element | null;
+  if (next?.closest(".inline-editable, .inline-edit-target, .preview-table-wrap, .mcd-insert-text-target, .mcd-insert-plus")) {
+    return;
+  }
+  schedulePreviewEditAutoDone();
 });
 
 preview.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -1623,6 +1654,10 @@ function setPreviewEditMode(enabled: boolean): void {
   applyPreviewEditMode();
   syncEditModeButton();
   if (!enabled && state) {
+    if (previewAutoDoneTimer) {
+      window.clearTimeout(previewAutoDoneTimer);
+      previewAutoDoneTimer = undefined;
+    }
     closeActiveModal();
     renderTablesEditor();
     queueRender();
@@ -1635,6 +1670,32 @@ function syncEditModeButton(): void {
     button.setAttribute("aria-pressed", previewEditMode ? "true" : "false");
     button.classList.toggle("primary", previewEditMode);
   }
+}
+
+function schedulePreviewEditAutoDone(): void {
+  if (previewAutoDoneTimer) {
+    window.clearTimeout(previewAutoDoneTimer);
+  }
+  previewAutoDoneTimer = window.setTimeout(() => {
+    previewAutoDoneTimer = undefined;
+    autoDonePreviewEdits();
+  }, 80);
+}
+
+function autoDonePreviewEdits(): void {
+  if (!state || !previewEditMode) {
+    return;
+  }
+  const active = document.activeElement;
+  if (
+    active instanceof Element &&
+    active.closest(
+      ".inline-editable, .inline-edit-target, .preview-table-wrap, .mcd-insert-text-target, .mcd-insert-plus",
+    )
+  ) {
+    return;
+  }
+  setPreviewEditMode(false);
 }
 
 function queueRender(): void {
@@ -1880,6 +1941,7 @@ function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
   }
   inlineTextBindings = new WeakMap();
   inlineTableBindings = new WeakMap();
+  inlineTableHeaderBindings = new WeakMap();
   previewBlockSources = new WeakMap();
   for (const marker of Array.from(
     preview.querySelectorAll<HTMLElement>(".mcd-annotation-marker, .mcd-citation-ref"),
@@ -1971,10 +2033,12 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
     const binding = inlineTextBindings.get(element);
     if (binding?.headingSplit) {
       updateMarkdownFromHeadingSplit(binding.headingSplit);
+      renderInsertionGuides();
       return;
     }
     if (binding?.block) {
       updateMarkdownFromInlineText(element, binding);
+      renderInsertionGuides();
     }
   });
 }
@@ -2038,6 +2102,7 @@ function splitHeadingInlineEdit(
   continuation.addEventListener("input", () => {
     if (previewEditMode) {
       updateMarkdownFromHeadingSplit(headingSplit);
+      renderInsertionGuides();
     }
   });
 
@@ -2079,6 +2144,16 @@ function focusEditableEnd(element: HTMLElement): void {
   const range = document.createRange();
   range.selectNodeContents(element);
   range.collapse(false);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function focusEditableBeginning(element: HTMLElement): void {
+  element.focus();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(true);
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
@@ -2293,10 +2368,14 @@ function applyPreviewEditMode(): void {
     element.setAttribute(
       "aria-label",
       isEditable
-        ? inlineTableBindings.has(element)
+        ? inlineTableHeaderBindings.has(element)
+          ? "Editing column name"
+          : inlineTableBindings.has(element)
           ? "Editing table cell"
           : "Editing text"
-        : inlineTableBindings.has(element)
+        : inlineTableHeaderBindings.has(element)
+          ? "Column name"
+          : inlineTableBindings.has(element)
           ? "Table cell"
           : "Text block",
     );
@@ -2332,7 +2411,12 @@ function enableInlineTableEditing(blocks: DocumentBlock[] = []): void {
     if (matchIndex < 0) {
       continue;
     }
-    bindInlineTable(previewTables[matchIndex], tableState, columns);
+    bindInlineTable(previewTables[matchIndex], tableState, placement, columns);
+    applyPendingInsertionAlignment(
+      "table",
+      tableState.manifest.id,
+      previewTables[matchIndex].closest<HTMLElement>(".preview-table-wrap") ?? previewTables[matchIndex],
+    );
     if (placement.source) {
       const tableElement = previewTables[matchIndex];
       previewBlockSources.set(tableElement, placement.source);
@@ -2402,16 +2486,33 @@ function bindPreviewImageSources(blocks: DocumentBlock[]): void {
   ).filter((image) => !image.closest(".mcd-annotations"));
 
   images.forEach((image, index) => {
-    const source = imageBlocks[index]?.source;
-    if (!source) {
+    const block = imageBlocks[index];
+    const source = block?.source;
+    if (!block || !source) {
       return;
     }
     previewBlockSources.set(image, source);
     const topLevel = previewTopLevelElement(image);
     if (topLevel) {
       previewBlockSources.set(topLevel, source);
+      const imageId = imageIdFromBlock(block);
+      if (imageId) {
+        applyPendingInsertionAlignment("image", imageId, topLevel);
+      }
     }
   });
+}
+
+function imageIdFromBlock(block: Extract<DocumentBlock, { type: "image_ref" }>): string | undefined {
+  const placement = block.placement as {
+    image?: unknown;
+    asset?: unknown;
+  };
+  return typeof placement.image === "string"
+    ? placement.image
+    : typeof placement.asset === "string"
+      ? placement.asset
+      : undefined;
 }
 
 function applyTableHeaderPreferences(blocks: DocumentBlock[]): void {
@@ -2470,11 +2571,28 @@ function applyHeaderPreferencesToTable(
   }
   if (!preferences.showColumnHeaders) {
     table.querySelector("thead")?.remove();
+  } else if (preferences.showRowHeaders) {
+    clearRenderedCornerHeader(table);
   }
 }
 
+function clearRenderedCornerHeader(table: HTMLTableElement): void {
+  const corner = table.querySelector<HTMLTableCellElement>("thead tr > :first-child");
+  if (!corner) {
+    return;
+  }
+  unbindInlineTableHeader(corner);
+  corner.textContent = "";
+  corner.removeAttribute("aria-label");
+  corner.title = "";
+}
+
 function removeReservedRowHeaderColumn(table: HTMLTableElement): void {
-  table.querySelector<HTMLTableCellElement>("thead tr > :first-child")?.remove();
+  const header = table.querySelector<HTMLTableCellElement>("thead tr > :first-child");
+  if (header) {
+    unbindInlineTableHeader(header);
+    header.remove();
+  }
   Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr")).forEach((row) => {
     const firstCell = row.querySelector<HTMLTableCellElement>("td, th");
     if (!firstCell) {
@@ -2597,9 +2715,11 @@ function findPreviewTableForColumns(
 function bindInlineTable(
   tableElement: HTMLTableElement,
   tableState: EditableTable,
+  placement: TablePlacement,
   columns: Array<TableViewColumn & { label: string; schema: TableColumn }>,
 ): void {
   tableElement.classList.add("inline-editable-table");
+  bindInlineTableHeaders(tableElement, tableState, placement, columns);
   const rows = Array.from(tableElement.querySelectorAll<HTMLTableRowElement>("tbody tr"));
   rows.forEach((rowElement, rowIndex) => {
     const row = tableState.rows[rowIndex];
@@ -2618,6 +2738,82 @@ function bindInlineTable(
       bindInlineTableCell(cell, { row, column }, rowIndex);
     });
   });
+}
+
+function bindInlineTableHeaders(
+  tableElement: HTMLTableElement,
+  tableState: EditableTable,
+  placement: TablePlacement,
+  columns: Array<TableViewColumn & { label: string; schema: TableColumn }>,
+): void {
+  const headers = Array.from(tableElement.querySelectorAll<HTMLTableCellElement>("thead th"));
+  headers.forEach((header, columnIndex) => {
+    const column = columns[columnIndex];
+    if (!column) {
+      return;
+    }
+    header.tabIndex = 0;
+    header.classList.add("inline-edit-target");
+    header.title = `${tableState.manifest.id} ${column.name} column name`;
+    bindInlineTableHeader(header, { table: tableState, placement, column });
+  });
+}
+
+function bindInlineTableHeader(
+  header: HTMLTableCellElement,
+  binding: InlineTableHeaderBinding,
+): void {
+  inlineTableHeaderBindings.set(header, binding);
+  header.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    header.blur();
+  });
+  header.addEventListener("input", () => {
+    if (!previewEditMode) {
+      return;
+    }
+    const next = editableText(header).replace(/\s+/g, " ").trim();
+    if (!next || next === binding.column.label) {
+      return;
+    }
+    recordHistoryCheckpoint({
+      coalesceKey: `preview-table-header:${binding.table.manifest.id}:${binding.column.schema.name}`,
+    });
+    setTableColumnLabel(binding.table, binding.placement, binding.column.schema.name, next);
+    binding.column.label = next;
+    markDirty({ render: false });
+  });
+}
+
+function setTableColumnLabel(
+  table: EditableTable,
+  placement: TablePlacement,
+  columnName: string,
+  label: string,
+): void {
+  const schemaColumn = table.schema.columns.find((column) => column.name === columnName);
+  if (schemaColumn) {
+    schemaColumn.label = label;
+  }
+
+  const view = placement.view ? table.views[placement.view] : undefined;
+  if (view && placement.display === "table") {
+    view.columns ??= table.schema.columns.map((column) => ({
+      name: column.name,
+      label: column.label ?? column.name,
+    }));
+    const viewColumn = view.columns.find((column) => column.name === columnName);
+    if (viewColumn) {
+      viewColumn.label = label;
+    } else {
+      view.columns.push({ name: columnName, label });
+    }
+    return;
+  }
 }
 
 function bindInlineTableCell(
@@ -2653,6 +2849,15 @@ function unbindInlineTableCell(cell: HTMLTableCellElement): void {
   cell.classList.remove("inline-edit-target", "inline-editable");
   cell.contentEditable = "false";
   cell.removeAttribute("aria-label");
+}
+
+function unbindInlineTableHeader(header: HTMLTableCellElement): void {
+  inlineTableHeaderBindings.delete(header);
+  header.classList.remove("inline-edit-target", "inline-editable");
+  header.contentEditable = "false";
+  header.removeAttribute("aria-label");
+  header.removeAttribute("tabindex");
+  header.title = "";
 }
 
 function parseInlineTableValue(
@@ -2697,19 +2902,39 @@ function renderInsertionGuides(): void {
     }
     const lineHeight = previewInsertionLineHeight(body);
     const lineCount = Math.max(1, Math.floor(height / lineHeight));
+    const occupiedLines = previewOccupiedInsertionLines(body, lineHeight, lineCount);
     const layer = document.createElement("div");
     layer.className = "mcd-insert-lines";
     layer.setAttribute("aria-hidden", "false");
 
     for (let index = 0; index < lineCount; index += 1) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "mcd-insert-line";
-      button.setAttribute("aria-label", `Insert content at line ${index + 1}`);
-      button.style.top = `${index * lineHeight}px`;
-      button.style.height = `${lineHeight}px`;
-      button.innerHTML = `<span aria-hidden="true">+</span>`;
-      button.addEventListener("click", (event) => {
+      if (occupiedLines.has(index)) {
+        continue;
+      }
+      const line = document.createElement("div");
+      line.className = "mcd-insert-line";
+      line.style.top = `${index * lineHeight}px`;
+      line.style.height = `${lineHeight}px`;
+
+      const textTarget = document.createElement("button");
+      textTarget.type = "button";
+      textTarget.className = "mcd-insert-text-target";
+      textTarget.setAttribute("aria-label", `Write text at line ${index + 1}`);
+      textTarget.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        focusPlainTextAtLine({
+          body,
+          y: index * lineHeight + lineHeight / 2,
+        });
+      });
+
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "mcd-insert-plus";
+      plus.setAttribute("aria-label", `Insert table or image at line ${index + 1}`);
+      plus.innerHTML = `<span aria-hidden="true">+</span>`;
+      plus.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         showInsertTypePopup({
@@ -2717,11 +2942,57 @@ function renderInsertionGuides(): void {
           y: index * lineHeight + lineHeight / 2,
         });
       });
-      layer.appendChild(button);
+      line.appendChild(textTarget);
+      line.appendChild(plus);
+      layer.appendChild(line);
     }
 
     body.appendChild(layer);
   }
+}
+
+function previewOccupiedInsertionLines(
+  body: HTMLElement,
+  lineHeight: number,
+  lineCount: number,
+): Set<number> {
+  const occupied = new Set<number>();
+  const bodyTop = body.getBoundingClientRect().top;
+
+  for (const element of Array.from(body.children)) {
+    if (!(element instanceof HTMLElement) || !previewElementHasInsertionContent(element)) {
+      continue;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.height <= 0) {
+      continue;
+    }
+    const top = Math.max(0, rect.top - bodyTop);
+    const bottom = Math.max(top, rect.bottom - bodyTop);
+    const firstLine = Math.max(0, Math.floor(top / lineHeight));
+    const lastLine = Math.min(lineCount - 1, Math.floor(Math.max(top, bottom - 0.5) / lineHeight));
+    for (let index = firstLine; index <= lastLine; index += 1) {
+      occupied.add(index);
+    }
+  }
+
+  return occupied;
+}
+
+function previewElementHasInsertionContent(element: HTMLElement): boolean {
+  if (
+    element.classList.contains("mcd-insert-lines") ||
+    element.classList.contains("empty-state")
+  ) {
+    return false;
+  }
+  if (element.classList.contains("mcd-transient-text-input")) {
+    return Boolean(element.textContent?.trim());
+  }
+  if (element.matches("table, img, svg, canvas, video") || element.querySelector("table, img, svg, canvas, video")) {
+    return true;
+  }
+  return Boolean(element.textContent?.trim());
 }
 
 function previewInsertionLineHeight(body: HTMLElement): number {
@@ -2750,13 +3021,166 @@ function showInsertTypePopup(target: InsertLineTarget): void {
   `);
   activeModal
     ?.querySelector<HTMLButtonElement>('[data-action="table"]')
-    ?.addEventListener("click", () => showTableSizePopup(line));
+    ?.addEventListener("click", () => showTableSizePopup(line, target));
   activeModal
     ?.querySelector<HTMLButtonElement>('[data-action="image"]')
-    ?.addEventListener("click", () => showImagePopup(line));
+    ?.addEventListener("click", () => showImagePopup(line, target));
 }
 
-function showTableSizePopup(insertLine: number): void {
+function focusPlainTextAtLine(target: InsertLineTarget): void {
+  if (!state) {
+    return;
+  }
+
+  const insertLine = markdownInsertionLine(target);
+  const editor = document.createElement("p");
+  editor.className = "inline-edit-target inline-editable mcd-transient-text-input";
+  editor.contentEditable = "true";
+  editor.spellcheck = true;
+  editor.tabIndex = 0;
+  editor.setAttribute("aria-label", "Editing text");
+
+  const anchor = previewElementForInsertionTarget(target);
+  if (anchor.before) {
+    target.body.insertBefore(editor, anchor.before);
+  } else {
+    target.body.insertBefore(editor, target.body.querySelector(".mcd-insert-lines"));
+  }
+  alignTransientTextInput(editor, target);
+
+  let source: SourceSpan | undefined;
+  let hasInsertedMarkdown = false;
+  inlineTextBindings.set(editor, {});
+  editor.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.stopPropagation();
+  });
+  editor.addEventListener("input", () => {
+    if (!previewEditMode) {
+      return;
+    }
+    const text = editableText(editor);
+    if (!hasInsertedMarkdown) {
+      if (!text.trim()) {
+        return;
+      }
+      recordHistoryCheckpoint();
+      source = insertMarkdownBlockAtLine(insertLine, text);
+      hasInsertedMarkdown = true;
+      markDirty({ render: false });
+      renderInsertionGuides();
+      return;
+    }
+    if (source) {
+      source = replaceMarkdownSource(source, text);
+      markDirty({ render: false });
+      renderInsertionGuides();
+    }
+  });
+  editor.addEventListener("blur", () => {
+    if (hasInsertedMarkdown || editableText(editor).trim()) {
+      return;
+    }
+    inlineTextBindings.delete(editor);
+    editor.remove();
+  });
+
+  focusEditableBeginning(editor);
+}
+
+function alignTransientTextInput(editor: HTMLElement, target: InsertLineTarget): void {
+  const lineHeight = previewInsertionLineHeight(target.body);
+  const desiredTop = Math.max(0, target.y - lineHeight / 2);
+  alignElementToPreviewTop(editor, target.body, desiredTop);
+}
+
+function alignElementToPreviewTop(element: HTMLElement, body: HTMLElement, desiredTop: number): void {
+  element.style.marginTop = "";
+  const bodyTop = body.getBoundingClientRect().top;
+  const currentTop = element.getBoundingClientRect().top - bodyTop;
+  const computedMarginTop = Number.parseFloat(window.getComputedStyle(element).marginTop);
+  const baseMarginTop = Number.isFinite(computedMarginTop) ? computedMarginTop : 0;
+  const offset = desiredTop - currentTop;
+  if (Math.abs(offset) > 0.5) {
+    element.style.marginTop = `${baseMarginTop + offset}px`;
+    const adjustedTop = element.getBoundingClientRect().top - bodyTop;
+    const correction = desiredTop - adjustedTop;
+    if (Math.abs(correction) > 0.5) {
+      element.style.marginTop = `${baseMarginTop + offset + correction}px`;
+    }
+  }
+}
+
+function queueInsertionAlignment(
+  kind: PendingInsertionAlignment["kind"],
+  id: string,
+  target: InsertLineTarget,
+): void {
+  const lineHeight = previewInsertionLineHeight(target.body);
+  const page = target.body.closest<HTMLElement>(".preview-page");
+  const pageNumber = Number(page?.dataset.pageNumber) || 1;
+  pendingInsertionAlignments = pendingInsertionAlignments.filter(
+    (alignment) => alignment.kind !== kind || alignment.id !== id,
+  );
+  pendingInsertionAlignments.push({
+    kind,
+    id,
+    pageNumber,
+    desiredTop: Math.max(0, target.y - lineHeight / 2),
+  });
+}
+
+function applyPendingInsertionAlignment(
+  kind: PendingInsertionAlignment["kind"],
+  id: string,
+  element: HTMLElement,
+): void {
+  const body = element.closest<HTMLDivElement>(".preview-page-body");
+  const page = element.closest<HTMLElement>(".preview-page");
+  if (!body || !page) {
+    return;
+  }
+
+  const pageNumber = Number(page.dataset.pageNumber) || 1;
+  const alignmentIndex = pendingInsertionAlignments.findIndex(
+    (alignment) =>
+      alignment.kind === kind &&
+      alignment.id === id &&
+      alignment.pageNumber === pageNumber,
+  );
+  if (alignmentIndex < 0) {
+    return;
+  }
+
+  const [alignment] = pendingInsertionAlignments.splice(alignmentIndex, 1);
+  if (!alignment) {
+    return;
+  }
+  alignElementToPreviewTop(element, body, alignment.desiredTop);
+}
+
+function previewElementForInsertionTarget(target: InsertLineTarget): { before?: HTMLElement } {
+  const bodyTop = target.body.getBoundingClientRect().top;
+  for (const element of Array.from(target.body.children)) {
+    if (
+      !(element instanceof HTMLElement) ||
+      element.classList.contains("mcd-insert-lines") ||
+      element.classList.contains("empty-state")
+    ) {
+      continue;
+    }
+    const rect = element.getBoundingClientRect();
+    const midpoint = rect.top - bodyTop + rect.height / 2;
+    if (target.y < midpoint) {
+      return { before: element };
+    }
+  }
+  return {};
+}
+
+function showTableSizePopup(insertLine: number, target: InsertLineTarget): void {
   showModal(`
     <form class="mcd-popup" id="tableCreateForm">
       <div class="mcd-popup-header">
@@ -2794,16 +3218,22 @@ function showTableSizePopup(insertLine: number): void {
     const data = new FormData(form);
     const columns = quantityFromForm(data.get("columns"), 1, 24, 3);
     const rows = quantityFromForm(data.get("rows"), 1, 200, 3);
-    createTableAtLine(insertLine, columns, rows, {
-      showColumnHeaders: data.has("columnHeaders"),
-      showRowHeaders: data.has("rowHeaders"),
-    });
+    createTableAtLine(
+      insertLine,
+      columns,
+      rows,
+      {
+        showColumnHeaders: data.has("columnHeaders"),
+        showRowHeaders: data.has("rowHeaders"),
+      },
+      target,
+    );
     closeActiveModal();
   });
   activeModal?.querySelector<HTMLInputElement>("#tableColumnCount")?.focus();
 }
 
-function showImagePopup(insertLine: number): void {
+function showImagePopup(insertLine: number, target: InsertLineTarget): void {
   showModal(`
     <form class="mcd-popup" id="imageCreateForm">
       <div class="mcd-popup-header">
@@ -2839,7 +3269,7 @@ function showImagePopup(insertLine: number): void {
     if (!file || !alt) {
       return;
     }
-    void createImageAtLine(insertLine, file, alt).then(() => closeActiveModal());
+    void createImageAtLine(insertLine, file, alt, target).then(() => closeActiveModal());
   });
   fileInput?.focus();
 }
@@ -2939,6 +3369,7 @@ function createTableAtLine(
   columnCount: number,
   rowCount: number,
   preferences: { showColumnHeaders: boolean; showRowHeaders: boolean },
+  target?: InsertLineTarget,
 ): void {
   if (!state) {
     return;
@@ -3008,12 +3439,20 @@ function createTableAtLine(
   state.zip.file(viewPath, `${JSON.stringify(view, null, 2)}\n`);
   state.zip.file(entry.data, tableToCsv(table));
   insertMarkdownBlockAtLine(insertLine, `:::table\ntable: ${id}\nview: default\n:::`);
+  if (target) {
+    queueInsertionAlignment("table", id, target);
+  }
   renderTablesEditor();
   markDirty();
   setStatus(`Created table '${id}'.`);
 }
 
-async function createImageAtLine(insertLine: number, file: File, alt: string): Promise<void> {
+async function createImageAtLine(
+  insertLine: number,
+  file: File,
+  alt: string,
+  target?: InsertLineTarget,
+): Promise<void> {
   if (!state) {
     return;
   }
@@ -3043,27 +3482,49 @@ async function createImageAtLine(insertLine: number, file: File, alt: string): P
   state.zip.file(assetPath, new Uint8Array(await file.arrayBuffer()));
   state.zip.file(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
   insertMarkdownBlockAtLine(insertLine, `:::image\nimage: ${id}\nalt: ${alt}\n:::`);
+  if (target) {
+    queueInsertionAlignment("image", id, target);
+  }
   markDirty();
   setStatus(`Created image '${id}'.`);
 }
 
-function insertMarkdownBlockAtLine(insertLine: number, block: string): void {
+function insertMarkdownBlockAtLine(insertLine: number, block: string): SourceSpan {
   if (!state) {
-    return;
+    return {
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: block.length,
+    };
   }
   const lines = state.markdown.split(/\r\n|\r|\n/);
   const hasContent = state.markdown.trim().length > 0;
   if (!hasContent) {
     state.markdown = block;
     markdownEditor.value = state.markdown;
-    return;
+    const blockLines = block.split("\n");
+    return {
+      startLine: 1,
+      startColumn: 1,
+      endLine: blockLines.length,
+      endColumn: blockLines.at(-1)?.length ?? 1,
+    };
   }
 
   const index = Math.min(Math.max(0, insertLine - 1), lines.length);
   const before = lines.slice(0, index).join("\n").trimEnd();
   const after = lines.slice(index).join("\n").trimStart();
+  const startLine = before ? markdownLineCount(before) + 2 : 1;
   state.markdown = [before, block, after].filter(Boolean).join("\n\n");
   markdownEditor.value = state.markdown;
+  const blockLines = block.split("\n");
+  return {
+    startLine,
+    startColumn: 1,
+    endLine: startLine + blockLines.length - 1,
+    endColumn: blockLines.at(-1)?.length ?? 1,
+  };
 }
 
 function nextTableId(packageState: PackageState): string {
