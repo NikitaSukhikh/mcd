@@ -33,7 +33,7 @@ Easy to integrate into CI/CD.
 
 TO DO: Build a web viewer like:
 
-https://viewer.mcd.org
+https://mcdviewer.org
 
 User flow:
 

@@ -1004,6 +1004,15 @@ mod tests {
     }
 
     #[test]
+    fn expanded_markdown_preserves_inline_math() {
+        let package = package_with("# Math\n\nInline $x^2 + y^2 = z^2$ remains math.\n");
+
+        let markdown = expanded_markdown_export(&package).expect("expanded markdown");
+
+        assert!(markdown.contains("Inline $x^2 + y^2 = z^2$ remains math."));
+    }
+
+    #[test]
     fn chart_export_contains_exact_typed_rows_and_view_refs() {
         let package = package_with(
             ":::table\nref: revenue-chart\ntable: revenue\nview: chart\ndisplay: chart\n:::\n",

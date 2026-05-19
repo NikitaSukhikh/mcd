@@ -69,6 +69,7 @@ For publishing and downloadable binary releases, see [RELEASE.md](RELEASE.md).
 - Python bindings are in `bindings/python`.
 - TypeScript/JavaScript bindings are in `bindings/typescript`.
 - PHP wrapper bindings are in `bindings/php` and delegate to the installed `mcd` CLI.
+- A local-first browser viewer/editor is in `web/mcd-viewer`.
 
 ## MCD Package Layout
 
@@ -137,6 +138,18 @@ Render a package for reading:
 mcd render report.mcd --html --output report.html
 mcd render report.mcd --markdown --output report.rendered.md
 ```
+
+Run the browser viewer/editor:
+
+```bash
+cd web/mcd-viewer
+npm install
+npm run dev
+```
+
+The web app opens `.mcd` files locally in the browser, validates through the
+WASM TypeScript binding, previews expanded Markdown, and edits text,
+annotations, and CSV-backed table rows.
 
 Unpack a package, edit its source files, then repack it:
 

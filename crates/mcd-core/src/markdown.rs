@@ -360,7 +360,21 @@ fn collect_plain_text_inner<'arena>(node: &'arena AstNode<'arena>, text: &mut St
         }
         NodeValue::Code(NodeCode { literal, .. }) => text.push_str(literal),
         NodeValue::HtmlInline(value) => text.push_str(value),
-        NodeValue::Math(NodeMath { literal, .. }) => text.push_str(literal),
+        NodeValue::Math(NodeMath {
+            display_math,
+            literal,
+            ..
+        }) => {
+            if *display_math {
+                text.push_str("$$");
+                text.push_str(literal);
+                text.push_str("$$");
+            } else {
+                text.push('$');
+                text.push_str(literal);
+                text.push('$');
+            }
+        }
         NodeValue::SoftBreak | NodeValue::LineBreak => text.push('\n'),
         NodeValue::CodeBlock(code) => text.push_str(&code.literal),
         NodeValue::HtmlBlock(html) => text.push_str(&html.literal),
@@ -506,6 +520,22 @@ mod tests {
                     text,
                     r#"Read [the guide](https://example.com/guide "Guide") now."#
                 );
+            }
+            other => panic!("expected paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preserves_inline_math_delimiters_in_text() {
+        let doc = parse_markdown(
+            "content/main.md",
+            "Inline $x^2 + y^2 = z^2$ remains math.",
+        )
+        .expect("markdown parses");
+
+        match &doc.blocks[0] {
+            DocumentBlock::Paragraph { text, .. } => {
+                assert_eq!(text, "Inline $x^2 + y^2 = z^2$ remains math.");
             }
             other => panic!("expected paragraph, got {other:?}"),
         }
