@@ -1,17 +1,9 @@
 # Rendering technology
 
-1. Immediate: Use HTML + CSS paged rendering.
+1. Immediate: HTML + CSS paged rendering.
 
 CSS Paged Media already defines page size, margins, page boxes, headers, footers, page numbering, and paginated layout concepts.
 
-For pagination, use one of these:
-
-Tool	Use
-Paged.js	Browser-based pagination and print/PDF preview
-Vivliostyle	More complete web-publication/paged-document viewer
-Plain browser print CSS	Simplest fallback
-
-Paged.js is an open-source browser library for displaying paginated content and generating print books with web technology. Vivliostyle Viewer is a web application for displaying and typesetting HTML+CSS documents.
 
 For .mcd, the renderer should create:
 
@@ -21,9 +13,7 @@ render/assets/*
 
 Then the browser displays it.
 
-Why CLI + browser is best first
-
-It gives immediate usability:
+CLI + browser is best first, because it gives immediate usability:
 
 mcd view report.mcd
 mcd render report.mcd --html out/
@@ -41,7 +31,7 @@ Easy to integrate into CI/CD.
 
 2. Web viewer should come second
 
-Build a web viewer like:
+TO DO: Build a web viewer like:
 
 https://viewer.mcd.org
 

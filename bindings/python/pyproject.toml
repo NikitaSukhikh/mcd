@@ -3,7 +3,7 @@ requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
-name = "mcd"
+name = "mcdee"
 version = "0.1.0a0"
 description = "Python bindings for Markdown CSV Document packages."
 readme = "README.md"
@@ -16,6 +16,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Rust",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mcd-format/mcd"
+Repository = "https://github.com/mcd-format/mcd"
+Issues = "https://github.com/mcd-format/mcd/issues"
 
 [project.optional-dependencies]
 pandas = ["pandas>=1.5"]

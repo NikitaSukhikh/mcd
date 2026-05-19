@@ -3,6 +3,16 @@
   "description": "PHP wrapper for Markdown CSV Document packages",
   "type": "library",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/mcd-format/mcd",
+  "authors": [
+    {
+      "name": "MCD contributors"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/mcd-format/mcd/issues",
+    "source": "https://github.com/mcd-format/mcd"
+  },
   "require": {
     "php": ">=8.1"
   },

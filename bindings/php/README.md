@@ -16,6 +16,12 @@ cd bindings/php
 composer install
 ```
 
+From Packagist, use:
+
+```bash
+composer require mcd/parser
+```
+
 ```php
 <?php
 

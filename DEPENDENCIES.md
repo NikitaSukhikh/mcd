@@ -34,7 +34,8 @@ proptest = "*"
 
 ```toml
 [dependencies]
-mcd-core = { path = "../mcd-core" }
+mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
+mcd-render = { version = "0.1.0-alpha.0", path = "../mcd-render" }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 ```
@@ -43,15 +44,14 @@ anyhow = "1"
 
 ```toml
 [dependencies]
-mcd-core = { path = "../mcd-core" }
+mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
 ```
 
 ### WASM Crate (`mcd-wasm`)
 
 ```toml
 [dependencies]
-mcd-core = { path = "../mcd-core" }
-wasm-bindgen = "*"
+mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
 
 [lib]
 crate-type = ["cdylib"]
@@ -76,7 +76,7 @@ requires = ["maturin>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
-name = "mcd"
+name = "mcdee"
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Rust",

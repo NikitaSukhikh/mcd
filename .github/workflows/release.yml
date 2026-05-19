@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cli-binaries:
+    name: CLI binary
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x64
+            archive: mcd-cli-linux-x64.tar.gz
+          - os: macos-latest
+            artifact: macos-arm64
+            archive: mcd-cli-macos-arm64.tar.gz
+          - os: windows-latest
+            artifact: windows-x64
+            archive: mcd-cli-windows-x64.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p mcd-cli
+      - name: Archive Unix binary
+        if: matrix.os != 'windows-latest'
+        run: tar -czf ${{ matrix.archive }} -C target/release mcd
+      - name: Archive Windows binary
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path target/release/mcd.exe -DestinationPath ${{ matrix.archive }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive }}
+

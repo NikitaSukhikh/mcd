@@ -2,6 +2,14 @@
 
 Rust-backed Python bindings for Markdown CSV Document packages.
 
+Install the PyPI distribution:
+
+```bash
+pip install mcdee
+```
+
+The distribution name is `mcdee`; the Python import package is `mcd`.
+
 ```python
 import mcd
 

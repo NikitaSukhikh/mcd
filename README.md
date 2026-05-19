@@ -6,6 +6,18 @@ The `mcd` CLI works with `.mcd` files as packages, and it can also validate and 
 
 ## Install and Run
 
+For command-line use, install the Rust CLI:
+
+```bash
+cargo install mcd-cli --version 0.1.0-alpha.0
+```
+
+Then use:
+
+```bash
+mcd <command>
+```
+
 From this repository:
 
 ```bash
@@ -18,16 +30,39 @@ To install the CLI locally from the checkout:
 cargo install --path crates/mcd-cli
 ```
 
-After installation, use:
+Rust libraries are available as crates:
 
 ```bash
-mcd <command>
+cargo add mcd-core@0.1.0-alpha.0
+cargo add mcd-render@0.1.0-alpha.0
 ```
 
-The examples below use the installed `mcd` command. If you have not installed it, replace `mcd` with `cargo run -p mcd-cli --`.
+TypeScript/JavaScript projects can install:
+
+```bash
+npm install @mcd/parser
+```
+
+Python projects can install the PyPI distribution `mcdee`, which exposes
+the import package `mcd`:
+
+```bash
+pip install mcdee
+```
+
+PHP projects can install the Composer package. The PHP wrapper delegates to the
+`mcd` CLI, so install the CLI first and make sure it is on `PATH`.
+
+```bash
+composer require mcd/parser
+```
+
+The examples below use the installed `mcd` command. If you have not installed
+it, replace `mcd` with `cargo run -p mcd-cli --`.
 
 A dedicated command list is available in [CLI_COMMANDS.md](CLI_COMMANDS.md).
 For agent-oriented instructions on creating a package from scratch, see [MCD_CREATION_GUIDE.md](MCD_CREATION_GUIDE.md).
+For publishing and downloadable binary releases, see [RELEASE.md](RELEASE.md).
 
 ## Language Bindings
 

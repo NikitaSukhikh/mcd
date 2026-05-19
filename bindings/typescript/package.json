@@ -5,6 +5,23 @@
   "description": "MCD (Markdown CSV Document) parser for TypeScript/JavaScript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcd-format/mcd.git",
+    "directory": "bindings/typescript"
+  },
+  "homepage": "https://github.com/mcd-format/mcd#readme",
+  "bugs": {
+    "url": "https://github.com/mcd-format/mcd/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
     "prebuild": "npm run build:wasm",
@@ -27,5 +44,5 @@
     "document",
     "parser"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }
