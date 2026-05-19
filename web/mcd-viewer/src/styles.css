@@ -544,6 +544,7 @@ textarea {
   max-height: clamp(220px, 46vh, 520px);
   min-width: 0;
   overflow: auto;
+  position: relative;
   scrollbar-color: #9aa8b2 #edf1f4;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
@@ -577,6 +578,10 @@ textarea {
   vertical-align: top;
 }
 
+.data-table-cell {
+  position: relative;
+}
+
 .data-table th {
   background: #f6f7f8;
   color: #40515e;
@@ -593,6 +598,38 @@ textarea {
   border: 0;
   border-radius: 0;
   min-width: 140px;
+}
+
+.table-insert-control {
+  align-items: center;
+  background: rgb(15 118 110 / 50%);
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 17px;
+  font-weight: 700;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  min-height: 0;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease;
+  width: 24px;
+  z-index: 5;
+}
+
+.table-insert-control.is-visible,
+.table-insert-control:hover,
+.table-insert-control:focus,
+.table-insert-control:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: none;
 }
 
 .table-actions {
