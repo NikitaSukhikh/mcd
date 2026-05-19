@@ -309,7 +309,7 @@ app.innerHTML = `
     <header class="topbar">
       <div class="brand">
         <img class="brand-logo" src="/MCD_logo_tight.png" alt="MCD" />
-        <div class="brand-title">MCD Viewer</div>
+        <div class="brand-title">Viewer</div>
       </div>
       <div class="file-name" id="fileName"></div>
       <div class="toolbar">

@@ -62,18 +62,20 @@ button:disabled {
 .brand {
   align-items: flex-end;
   display: flex;
-  gap: 10px;
+  gap: 3px;
   min-width: 0;
 }
 
 .brand-logo {
-  height: 34px;
+  display: block;
+  height: 26px;
   width: auto;
 }
 
 .brand-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
+  line-height: 1;
 }
 
 .file-name {
