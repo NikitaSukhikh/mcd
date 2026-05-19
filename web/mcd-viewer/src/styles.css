@@ -756,6 +756,15 @@ textarea {
   white-space: pre-wrap;
 }
 
+.inline-empty-first-heading {
+  min-height: 1.25em;
+}
+
+.preview-document.is-edit-mode .inline-empty-first-heading:empty::before {
+  color: #8b9aa5;
+  content: attr(data-placeholder);
+}
+
 .inline-editable-heading-continuation {
   font-size: 1rem;
   font-weight: 400;

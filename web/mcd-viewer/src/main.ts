@@ -19,6 +19,7 @@ const UNSAVED_CHANGES_PROMPT = "Save changes?";
 const DEFAULT_ENTRYPOINT = "content/main.md";
 const HISTORY_LIMIT = 20;
 const HISTORY_GROUP_IDLE_MS = 1200;
+const EMPTY_FIRST_HEADING_ID = "mcd-empty-first-heading";
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -1809,11 +1810,30 @@ async function renderMarkdownPreview(markdown: string, blocks: DocumentBlock[] =
     ADD_ATTR: ["aria-label", "target"],
   });
   renderPagedPreview(sanitized, annotationItems);
+  renderEmptyFirstHeadingPlaceholder(markdown, blocks);
   enhancePreviewDom();
   await rewritePackageImageSources();
   await waitForPreviewImages();
   repaginatePreview();
   enableInlinePreviewEditing(blocks);
+}
+
+function renderEmptyFirstHeadingPlaceholder(markdown: string, blocks: DocumentBlock[]): void {
+  if (!state || markdown.trim() || blocks.length > 0) {
+    return;
+  }
+
+  const pageBody = preview.querySelector<HTMLDivElement>(".preview-page-body");
+  if (!pageBody) {
+    return;
+  }
+
+  pageBody.querySelector(".empty-state")?.remove();
+  const heading = document.createElement("h1");
+  heading.id = EMPTY_FIRST_HEADING_ID;
+  heading.className = "inline-empty-first-heading";
+  heading.dataset.placeholder = "Title";
+  pageBody.prepend(heading);
 }
 
 function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
@@ -1863,7 +1883,8 @@ function enableInlineTextEditing(blocks: DocumentBlock[]): void {
     if (boundElements.has(element) || inlineTextBindings.has(element)) {
       continue;
     }
-    bindInlineTextElement(element);
+    const emptyHeading = emptyFirstHeadingBlockForElement(element);
+    bindInlineTextElement(element, emptyHeading);
   }
 }
 
@@ -1912,6 +1933,24 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
       updateMarkdownFromInlineText(element, binding);
     }
   });
+}
+
+function emptyFirstHeadingBlockForElement(element: HTMLElement): EditableTextBlock | undefined {
+  if (element.id !== EMPTY_FIRST_HEADING_ID) {
+    return undefined;
+  }
+  return {
+    type: "heading",
+    id: EMPTY_FIRST_HEADING_ID,
+    level: 1,
+    text: "",
+    source: {
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 1,
+    },
+  };
 }
 
 function splitHeadingInlineEdit(
