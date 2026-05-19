@@ -21,6 +21,10 @@ const HISTORY_LIMIT = 20;
 const HISTORY_GROUP_IDLE_MS = 1200;
 const EMPTY_FIRST_HEADING_ID = "mcd-empty-first-heading";
 const RESERVED_ROW_HEADER_COLUMN = "row_header";
+const MIN_PREVIEW_TABLE_SCROLL_HEIGHT = 180;
+const LAZY_PREVIEW_TABLE_ROOT_MARGIN = 900;
+const VIRTUAL_TABLE_ROW_HEIGHT = 38;
+const VIRTUAL_TABLE_OVERSCAN_ROWS = 8;
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -214,7 +218,23 @@ interface TablePlacement {
   table: string;
   view?: string;
   display: "table" | "chart";
+  caption?: string;
   source?: SourceSpan;
+}
+
+interface PreviewLazyTable {
+  placement: TablePlacement;
+}
+
+interface PreviewVirtualTable {
+  table: EditableTable;
+  placement: TablePlacement;
+  columns: Array<TableViewColumn & { label: string; schema: TableColumn }>;
+  tbody: HTMLTableSectionElement;
+  wrapper: HTMLDivElement;
+  rowHeight: number;
+  visibleStart: number;
+  visibleEnd: number;
 }
 
 interface InsertLineTarget {
@@ -340,6 +360,11 @@ let historyGroupTimer: number | undefined;
 let savedContentKey = "";
 let activeModal: HTMLElement | undefined;
 let previewAutoDoneTimer: number | undefined;
+let previewTableRepaginateFrame: number | undefined;
+let previewLazyTableObserver: IntersectionObserver | undefined;
+let tablesEditorObserver: IntersectionObserver | undefined;
+let previewLazyTables: PreviewLazyTable[] = [];
+let previewVirtualTables = new WeakMap<HTMLDivElement, PreviewVirtualTable>();
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -446,6 +471,11 @@ const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
 const markdownHighlight = byId<HTMLPreElement>("markdownHighlight");
 const markdownEditor = byId<HTMLTextAreaElement>("markdownEditor");
 const tablesEditor = byId<HTMLDivElement>("tablesEditor");
+const foundEditorContent = tablesEditor.closest<HTMLElement>(".editor-content");
+if (!foundEditorContent) {
+  throw new Error("Missing editor content.");
+}
+const editorContent = foundEditorContent;
 const annotationsEditor = byId<HTMLDivElement>("annotationsEditor");
 const addAnnotationButton = byId<HTMLButtonElement>("addAnnotationButton");
 const previewPane = byId<HTMLElement>("previewPane");
@@ -488,6 +518,7 @@ for (const button of saveButtons) {
 
 previewPane.addEventListener("scroll", syncFloatingActions);
 window.addEventListener("scroll", syncFloatingActions);
+window.addEventListener("resize", syncPreviewTableScrollers);
 
 window.addEventListener("beforeunload", (event) => {
   if (!state?.dirty) {
@@ -1373,6 +1404,11 @@ function setActiveTab(tab: ActiveTab): void {
     );
     byId<HTMLElement>(`${name}Panel`).classList.toggle("is-active", selected);
   }
+  if (tab === "tables") {
+    renderTablesEditor();
+  } else {
+    resetTablesEditorObserver();
+  }
 }
 
 function setSidebarExpanded(expanded: boolean): void {
@@ -1393,6 +1429,7 @@ function syncFloatingActions(): void {
 }
 
 function renderTablesEditor(): void {
+  resetTablesEditorObserver();
   tablesEditor.innerHTML = "";
   if (!state) {
     tablesEditor.innerHTML = `<div class="empty-state">No document loaded.</div>`;
@@ -1413,7 +1450,9 @@ function renderTablesEditor(): void {
         <span class="file-name">${escapeHtml(table.manifest.data)}</span>
       </div>
       <div class="table-frame">
-        <div class="table-wrap"></div>
+        <div class="table-wrap" data-table-index="${state.tables.indexOf(table)}">
+          <div class="lazy-table-placeholder" role="status" aria-label="Table preview pending"></div>
+        </div>
       </div>
       <div class="table-actions">
         <button type="button" data-action="add-row">Add row</button>
@@ -1424,9 +1463,6 @@ function renderTablesEditor(): void {
     if (!tableFrame || !tableWrap) {
       throw new Error("Missing table wrapper.");
     }
-    const grid = renderTableGrid(table);
-    tableWrap.appendChild(grid);
-    attachTableInsertControls(tableFrame, tableWrap, table, grid);
     card
       .querySelector<HTMLButtonElement>('[data-action="add-row"]')
       ?.addEventListener("click", () => {
@@ -1440,7 +1476,67 @@ function renderTablesEditor(): void {
         markDirty();
       });
     tablesEditor.appendChild(card);
+    if (activeTab === "tables") {
+      observeTablesEditorGrid(tableWrap, tableFrame, table);
+    }
   }
+}
+
+function resetTablesEditorObserver(): void {
+  tablesEditorObserver?.disconnect();
+  tablesEditorObserver = undefined;
+}
+
+function observeTablesEditorGrid(
+  tableWrap: HTMLDivElement,
+  tableFrame: HTMLDivElement,
+  table: EditableTable,
+): void {
+  if (!("IntersectionObserver" in window)) {
+    renderEditorTableGrid(tableWrap, tableFrame, table);
+    return;
+  }
+
+  tablesEditorObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        const target = entry.target as HTMLDivElement;
+        tablesEditorObserver?.unobserve(target);
+        const frame = target.closest<HTMLDivElement>(".table-frame");
+        const index = Number(target.dataset.tableIndex);
+        const tableState = state?.tables[index];
+        if (frame && tableState) {
+          renderEditorTableGrid(target, frame, tableState);
+        }
+      }
+    },
+    { root: editorContent, rootMargin: "80px 0px" },
+  );
+  tablesEditorObserver.observe(tableWrap);
+  window.requestAnimationFrame(() => {
+    if (isElementNearScrollRoot(tableWrap, editorContent, 80)) {
+      tablesEditorObserver?.unobserve(tableWrap);
+      renderEditorTableGrid(tableWrap, tableFrame, table);
+    }
+  });
+}
+
+function renderEditorTableGrid(
+  tableWrap: HTMLDivElement,
+  tableFrame: HTMLDivElement,
+  table: EditableTable,
+): void {
+  if (tableWrap.dataset.gridRendered === "true") {
+    return;
+  }
+  tableWrap.dataset.gridRendered = "true";
+  tableWrap.replaceChildren();
+  const grid = renderTableGrid(table);
+  tableWrap.appendChild(grid);
+  attachTableInsertControls(tableFrame, tableWrap, table, grid);
 }
 
 function renderTableGrid(table: EditableTable): HTMLTableElement {
@@ -2408,7 +2504,7 @@ async function renderAndValidate(): Promise<void> {
     const validation = doc.validate();
     renderDiagnostics(validation);
     const blocks = validation.valid ? doc.blocks() : [];
-    const markdown = validation.valid ? doc.markdown({ expandTables: true }) : state.markdown;
+    const markdown = validation.valid ? doc.markdown({ expandTables: false }) : state.markdown;
     await renderMarkdownPreview(markdown, blocks);
     setStatus(
       validation.valid ? "" : "Document has validation errors. Preview is rendered from the Markdown editor.",
@@ -2584,22 +2680,105 @@ function annotationEndnotesNode(items: AnnotationPreviewItem[]): HTMLElement | u
   return section;
 }
 
+function resetLazyPreviewTables(): void {
+  previewLazyTableObserver?.disconnect();
+  previewLazyTableObserver = undefined;
+  previewLazyTables = [];
+  previewVirtualTables = new WeakMap();
+  if (previewTableRepaginateFrame !== undefined) {
+    window.cancelAnimationFrame(previewTableRepaginateFrame);
+    previewTableRepaginateFrame = undefined;
+  }
+}
+
+function lazyPreviewTableMarkdown(markdown: string, blocks: DocumentBlock[]): string {
+  const blockPlacements = tablePlacementsFromBlocks(blocks);
+  let blockCursor = 0;
+  const directivePattern = /(^|\n):::\s*table[^\n]*\n([\s\S]*?)\n:::/g;
+  return markdown.replace(directivePattern, (raw, leading: string, body: string) => {
+    const fields = directiveFields(body ?? "");
+    const table = fields.get("table");
+    if (!table) {
+      return raw;
+    }
+    const placement: TablePlacement = {
+      table,
+      view: fields.get("view"),
+      display: fields.get("display") === "chart" ? "chart" : "table",
+      caption: fields.get("caption"),
+    };
+    const blockMatch = nextMatchingTablePlacement(blockPlacements, blockCursor, placement);
+    if (blockMatch) {
+      blockCursor = blockMatch.index + 1;
+      placement.source = blockMatch.placement.source;
+      placement.caption ??= blockMatch.placement.caption;
+    }
+    const index = previewLazyTables.push({ placement }) - 1;
+    return `${leading}${lazyPreviewTableHtml(index, placement)}`;
+  });
+}
+
+function nextMatchingTablePlacement(
+  placements: TablePlacement[],
+  startIndex: number,
+  target: TablePlacement,
+): { index: number; placement: TablePlacement } | undefined {
+  for (let index = startIndex; index < placements.length; index += 1) {
+    const placement = placements[index];
+    if (
+      placement.table === target.table &&
+      placement.display === target.display &&
+      (placement.view ?? "") === (target.view ?? "")
+    ) {
+      return { index, placement };
+    }
+  }
+  return undefined;
+}
+
+function lazyPreviewTableHtml(index: number, placement: TablePlacement): string {
+  const caption = placement.caption
+    ? `<figcaption>${escapeHtml(placement.caption)}</figcaption>`
+    : "";
+  const view = placement.view ? ` data-mcd-view-id="${escapeAttr(placement.view)}"` : "";
+  return `<figure class="mcd-table-figure mcd-lazy-table" data-mcd-lazy-table-index="${index}" data-mcd-table-id="${escapeAttr(
+    placement.table,
+  )}"${view} data-mcd-display="${placement.display}">
+${caption}
+<div class="mcd-lazy-table-placeholder" role="status" aria-label="Table preview pending"></div>
+</figure>`;
+}
+
 async function renderMarkdownPreview(markdown: string, blocks: DocumentBlock[] = []): Promise<void> {
+  resetLazyPreviewTables();
   const annotationItems = annotationPreviewItems(markdown);
-  const rendered = marked.parse(annotatedPreviewMarkdown(markdown, annotationItems), {
+  const lazyMarkdown = lazyPreviewTableMarkdown(
+    annotatedPreviewMarkdown(markdown, annotationItems),
+    blocks,
+  );
+  const rendered = marked.parse(lazyMarkdown, {
     async: false,
   }) as string;
   const sanitized = DOMPurify.sanitize(rendered, {
     USE_PROFILES: { html: true, mathMl: true },
-    ADD_ATTR: ["aria-label", "target"],
+    ADD_ATTR: [
+      "aria-label",
+      "data-mcd-display",
+      "data-mcd-lazy-table-index",
+      "data-mcd-table-id",
+      "data-mcd-view-id",
+      "role",
+      "target",
+    ],
   });
   renderPagedPreview(sanitized, annotationItems);
   renderEmptyFirstHeadingPlaceholder(markdown, blocks);
   enhancePreviewDom();
   await rewritePackageImageSources();
   await waitForPreviewImages();
-  repaginatePreview();
+  repaginatePreviewWithScrollableTables();
   enableInlinePreviewEditing(blocks);
+  setupLazyPreviewTables();
 }
 
 function renderEmptyFirstHeadingPlaceholder(markdown: string, blocks: DocumentBlock[]): void {
@@ -3123,6 +3302,7 @@ function tablePlacementsFromBlocks(blocks: DocumentBlock[]): TablePlacement[] {
       table?: unknown;
       view?: unknown;
       display?: unknown;
+      caption?: unknown;
     };
     if (typeof placement.table !== "string") {
       return [];
@@ -3132,6 +3312,7 @@ function tablePlacementsFromBlocks(blocks: DocumentBlock[]): TablePlacement[] {
         table: placement.table,
         view: typeof placement.view === "string" ? placement.view : undefined,
         display: placement.display === "chart" ? "chart" : "table",
+        caption: typeof placement.caption === "string" ? placement.caption : undefined,
         source: block.source,
       },
     ];
@@ -3152,6 +3333,7 @@ function tablePlacementsFromMarkdown(markdown: string): TablePlacement[] {
       table,
       view: fields.get("view"),
       display: fields.get("display") === "chart" ? "chart" : "table",
+      caption: fields.get("caption"),
     });
   }
   return placements;
@@ -4288,6 +4470,7 @@ function imageExtension(file: File, mediaType: string): string {
 function renderPagedPreview(html: string, annotationItems: AnnotationPreviewItem[] = []): void {
   const template = document.createElement("template");
   template.innerHTML = html;
+  prepareLazyTablePlaceholders(template.content);
   const nodes = Array.from(template.content.childNodes).filter((node) => {
     return node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim());
   });
@@ -4308,6 +4491,315 @@ function renderPagedPreview(html: string, annotationItems: AnnotationPreviewItem
   }
 
   updatePageMapMetadata(pageNumber, annotationPreviewPageNumber());
+}
+
+function prepareLazyTablePlaceholders(root: DocumentFragment): void {
+  for (const figure of Array.from(
+    root.querySelectorAll<HTMLElement>(".mcd-lazy-table[data-mcd-lazy-table-index]"),
+  )) {
+    const entry = lazyPreviewTableEntry(figure);
+    const placeholder = figure.querySelector<HTMLElement>(".mcd-lazy-table-placeholder");
+    if (!entry || !placeholder) {
+      continue;
+    }
+    const table = state?.tables.find((candidate) => candidate.manifest.id === entry.placement.table);
+    const rowCount = table?.rows.length ?? 0;
+    const reservedRows = Math.min(rowCount, 12);
+    const estimatedHeight = Math.min(
+      560,
+      Math.max(MIN_PREVIEW_TABLE_SCROLL_HEIGHT, 54 + reservedRows * 34 + (rowCount > reservedRows ? 34 : 0)),
+    );
+    placeholder.style.minHeight = `${estimatedHeight}px`;
+  }
+}
+
+function setupLazyPreviewTables(): void {
+  const figures = Array.from(
+    preview.querySelectorAll<HTMLElement>(".mcd-lazy-table[data-mcd-lazy-table-index]"),
+  );
+  if (figures.length === 0) {
+    return;
+  }
+
+  if (!("IntersectionObserver" in window)) {
+    for (const figure of figures) {
+      renderLazyPreviewTable(figure);
+    }
+    return;
+  }
+
+  previewLazyTableObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        const figure = entry.target as HTMLElement;
+        previewLazyTableObserver?.unobserve(figure);
+        renderLazyPreviewTable(figure);
+      }
+    },
+    {
+      root: previewLazyScrollRoot(),
+      rootMargin: `${LAZY_PREVIEW_TABLE_ROOT_MARGIN}px 0px`,
+    },
+  );
+
+  for (const figure of figures) {
+    previewLazyTableObserver.observe(figure);
+  }
+
+  window.requestAnimationFrame(() => {
+    for (const figure of figures) {
+      if (isElementNearScrollRoot(figure, previewLazyScrollRoot(), LAZY_PREVIEW_TABLE_ROOT_MARGIN)) {
+        previewLazyTableObserver?.unobserve(figure);
+        renderLazyPreviewTable(figure);
+      }
+    }
+  });
+}
+
+function previewLazyScrollRoot(): HTMLElement | null {
+  return previewPane.scrollHeight > previewPane.clientHeight + 1 ? previewPane : null;
+}
+
+function lazyPreviewTableEntry(figure: HTMLElement): PreviewLazyTable | undefined {
+  const index = Number(figure.dataset.mcdLazyTableIndex);
+  if (!Number.isInteger(index) || index < 0) {
+    return undefined;
+  }
+  return previewLazyTables[index];
+}
+
+function isElementNearScrollRoot(element: Element, root: Element | null, margin: number): boolean {
+  const elementRect = element.getBoundingClientRect();
+  const rootRect = root?.getBoundingClientRect() ?? {
+    top: 0,
+    bottom: window.innerHeight,
+  };
+  return elementRect.bottom >= rootRect.top - margin && elementRect.top <= rootRect.bottom + margin;
+}
+
+function renderLazyPreviewTable(figure: HTMLElement): void {
+  if (figure.dataset.mcdLazyLoaded === "true") {
+    return;
+  }
+  const entry = lazyPreviewTableEntry(figure);
+  if (!entry || !state) {
+    return;
+  }
+  const table = state.tables.find((candidate) => candidate.manifest.id === entry.placement.table);
+  if (!table) {
+    return;
+  }
+  const columns = renderedColumnsForPlacement(table, entry.placement);
+  if (columns.length === 0) {
+    return;
+  }
+
+  figure.dataset.mcdLazyLoaded = "true";
+  const caption = entry.placement.caption ? figure.querySelector("figcaption")?.cloneNode(true) : undefined;
+  const source = entry.placement.source;
+  figure.replaceChildren();
+  if (caption) {
+    figure.appendChild(caption);
+  }
+  if (entry.placement.display === "chart") {
+    figure.appendChild(chartMetadataNode(table, entry.placement));
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "preview-table-wrap";
+  wrapper.setAttribute("role", "region");
+  wrapper.setAttribute("tabindex", "0");
+  wrapper.setAttribute("aria-label", `${table.manifest.id} table`);
+
+  const tableElement = document.createElement("table");
+  tableElement.className = "inline-editable-table";
+  tableElement.appendChild(renderPreviewTableHead(table, entry.placement, columns));
+  const tbody = document.createElement("tbody");
+  tableElement.appendChild(tbody);
+  wrapper.appendChild(tableElement);
+  figure.appendChild(wrapper);
+
+  if (source) {
+    previewBlockSources.set(figure, source);
+    previewBlockSources.set(wrapper, source);
+    previewBlockSources.set(tableElement, source);
+  }
+  applyPendingInsertionAlignment("table", table.manifest.id, wrapper);
+  setupPreviewTableScroller(wrapper);
+
+  const virtualTable: PreviewVirtualTable = {
+    table,
+    placement: entry.placement,
+    columns,
+    tbody,
+    wrapper,
+    rowHeight: VIRTUAL_TABLE_ROW_HEIGHT,
+    visibleStart: -1,
+    visibleEnd: -1,
+  };
+  previewVirtualTables.set(wrapper, virtualTable);
+  wrapper.addEventListener(
+    "scroll",
+    () => {
+      if (wrapper.contains(document.activeElement)) {
+        return;
+      }
+      renderVirtualPreviewTableRows(virtualTable);
+    },
+    { passive: true },
+  );
+
+  syncPreviewTableScrollState(wrapper);
+  renderVirtualPreviewTableRows(virtualTable);
+  applyPreviewEditMode();
+  window.requestAnimationFrame(() => {
+    syncPreviewTableScrollState(wrapper);
+    renderVirtualPreviewTableRows(virtualTable);
+    schedulePreviewTableRepagination();
+  });
+}
+
+function renderedColumnsForPlacement(
+  table: EditableTable,
+  placement: TablePlacement,
+): Array<TableViewColumn & { label: string; schema: TableColumn }> {
+  const preferences = tableHeaderPreferences(table, placement);
+  const columns = columnsForPlacement(table, placement);
+  return preferences.showRowHeaders
+    ? columns
+    : columns.filter((column) => column.name !== RESERVED_ROW_HEADER_COLUMN);
+}
+
+function renderPreviewTableHead(
+  table: EditableTable,
+  placement: TablePlacement,
+  columns: Array<TableViewColumn & { label: string; schema: TableColumn }>,
+): HTMLTableSectionElement {
+  const thead = document.createElement("thead");
+  if (!tableHeaderPreferences(table, placement).showColumnHeaders) {
+    return thead;
+  }
+
+  const row = document.createElement("tr");
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.dataset.mcdColumn = column.name;
+    setPreviewTableCellAlignment(th, column.schema);
+    if (column.name === RESERVED_ROW_HEADER_COLUMN && tableHeaderPreferences(table, placement).showRowHeaders) {
+      th.setAttribute("aria-label", "Row headers");
+    } else {
+      th.textContent = column.label;
+      th.tabIndex = 0;
+      th.classList.add("inline-edit-target");
+      th.title = `${table.manifest.id} ${column.name} column name`;
+      bindInlineTableHeader(th, { table, placement, column });
+    }
+    row.appendChild(th);
+  }
+  thead.appendChild(row);
+  return thead;
+}
+
+function chartMetadataNode(table: EditableTable, placement: TablePlacement): HTMLDivElement {
+  const node = document.createElement("div");
+  node.className = "mcd-chart-metadata";
+  const viewId = placement.view ?? "default";
+  node.textContent = `Chart metadata: table ${table.manifest.id}, view ${viewId}.`;
+  return node;
+}
+
+function renderVirtualPreviewTableRows(virtualTable: PreviewVirtualTable): void {
+  const rowCount = virtualTable.table.rows.length;
+  const viewportHeight = Math.max(virtualTable.wrapper.clientHeight, MIN_PREVIEW_TABLE_SCROLL_HEIGHT);
+  const visibleRows = Math.ceil(viewportHeight / virtualTable.rowHeight) + VIRTUAL_TABLE_OVERSCAN_ROWS * 2;
+  const start = Math.max(
+    0,
+    Math.floor(virtualTable.wrapper.scrollTop / virtualTable.rowHeight) - VIRTUAL_TABLE_OVERSCAN_ROWS,
+  );
+  const end = Math.min(rowCount, start + visibleRows);
+  if (start === virtualTable.visibleStart && end === virtualTable.visibleEnd) {
+    return;
+  }
+
+  virtualTable.visibleStart = start;
+  virtualTable.visibleEnd = end;
+  virtualTable.tbody.replaceChildren();
+  virtualTable.tbody.appendChild(spacerTableRow(virtualTable.columns.length, start * virtualTable.rowHeight));
+  for (let rowIndex = start; rowIndex < end; rowIndex += 1) {
+    virtualTable.tbody.appendChild(renderPreviewTableRow(virtualTable, rowIndex));
+  }
+  virtualTable.tbody.appendChild(
+    spacerTableRow(virtualTable.columns.length, Math.max(0, rowCount - end) * virtualTable.rowHeight),
+  );
+}
+
+function spacerTableRow(columnCount: number, height: number): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  row.className = "mcd-virtual-table-spacer";
+  row.setAttribute("aria-hidden", "true");
+  const cell = document.createElement("td");
+  cell.colSpan = Math.max(1, columnCount);
+  cell.style.height = `${height}px`;
+  cell.style.padding = "0";
+  cell.style.border = "0";
+  row.appendChild(cell);
+  return row;
+}
+
+function renderPreviewTableRow(
+  virtualTable: PreviewVirtualTable,
+  rowIndex: number,
+): HTMLTableRowElement {
+  const tr = document.createElement("tr");
+  tr.dataset.rowIndex = String(rowIndex);
+  const row = virtualTable.table.rows[rowIndex];
+  const showRowHeaders = tableHeaderPreferences(virtualTable.table, virtualTable.placement).showRowHeaders;
+  for (const column of virtualTable.columns) {
+    const isRowHeader = showRowHeaders && column.name === RESERVED_ROW_HEADER_COLUMN;
+    const cell = document.createElement(isRowHeader ? "th" : "td") as HTMLTableCellElement;
+    if (isRowHeader) {
+      cell.scope = "row";
+    }
+    cell.textContent = formatPreviewTableValue(row?.[column.name] ?? "", column);
+    setPreviewTableCellAlignment(cell, column.schema);
+    cell.tabIndex = 0;
+    cell.classList.add("inline-edit-target");
+    cell.title = `${virtualTable.table.manifest.id} ${column.name} row ${rowIndex + 1}`;
+    if (row) {
+      bindInlineTableCell(cell, { row, column }, rowIndex);
+    }
+    tr.appendChild(cell);
+  }
+  return tr;
+}
+
+function setPreviewTableCellAlignment(cell: HTMLTableCellElement, column: TableColumn): void {
+  if (["integer", "decimal"].includes(column.type)) {
+    cell.dataset.align = "right";
+  } else if (column.type === "boolean") {
+    cell.dataset.align = "center";
+  }
+}
+
+function formatPreviewTableValue(
+  value: string,
+  column: TableViewColumn & { schema: TableColumn },
+): string {
+  if (!value) {
+    return "";
+  }
+  if (column.format === "currency") {
+    return column.currency ? `${column.currency} ${value}` : value;
+  }
+  if (column.format === "percent" || column.percent) {
+    return `${value}%`;
+  }
+  const unit = column.unit ?? (column.format !== "currency" ? column.currency : undefined);
+  return unit ? `${value} ${unit}` : value;
 }
 
 function appendPreviewPage(pageNumber: number): { page: HTMLElement; body: HTMLDivElement } {
@@ -4341,6 +4833,24 @@ function repaginatePreview(): void {
 
   const pageNumber = paginateNodes(nodes);
   updatePageMapMetadata(pageNumber, annotationPreviewPageNumber());
+}
+
+function repaginatePreviewWithScrollableTables(): void {
+  syncPreviewTableScrollers();
+  repaginatePreview();
+  syncPreviewTableScrollers();
+  repaginatePreview();
+  syncPreviewTableScrollers();
+}
+
+function schedulePreviewTableRepagination(): void {
+  if (previewTableRepaginateFrame !== undefined) {
+    return;
+  }
+  previewTableRepaginateFrame = window.requestAnimationFrame(() => {
+    previewTableRepaginateFrame = undefined;
+    repaginatePreviewWithScrollableTables();
+  });
 }
 
 function paginateNodes(nodes: Node[]): number {
@@ -4574,11 +5084,79 @@ function enhancePreviewDom(): void {
     wrapper.setAttribute("aria-label", "Scrollable table");
     table.replaceWith(wrapper);
     wrapper.appendChild(table);
+    setupPreviewTableScroller(wrapper);
   }
+  syncPreviewTableScrollers();
 
   for (const math of Array.from(preview.querySelectorAll<HTMLElement>(".mcd-math"))) {
     math.setAttribute("tabindex", "0");
   }
+}
+
+function setupPreviewTableScroller(wrapper: HTMLDivElement): void {
+  if (wrapper.dataset.mcdTableScroller === "true") {
+    return;
+  }
+  wrapper.dataset.mcdTableScroller = "true";
+  wrapper.addEventListener("scroll", () => syncPreviewTableScrollState(wrapper), {
+    passive: true,
+  });
+}
+
+function syncPreviewTableScrollers(): void {
+  const wrappers = Array.from(
+    preview.querySelectorAll<HTMLDivElement>(".preview-table-wrap"),
+  );
+  for (const wrapper of wrappers) {
+    setupPreviewTableScroller(wrapper);
+    syncPreviewTableScrollState(wrapper);
+  }
+}
+
+function syncPreviewTableScrollState(wrapper: HTMLDivElement): void {
+  syncPreviewTableMaxHeight(wrapper);
+
+  const isScrollable = wrapper.scrollWidth > wrapper.clientWidth + 1;
+  const isYScrollable = wrapper.scrollHeight > wrapper.clientHeight + 1;
+  const atStart = wrapper.scrollLeft <= 1;
+  const atEnd = wrapper.scrollLeft + wrapper.offsetWidth >= wrapper.scrollWidth - 1;
+  wrapper.classList.toggle("is-scrollable", isScrollable);
+  wrapper.classList.toggle("is-y-scrollable", isYScrollable);
+  wrapper.classList.toggle("at-start", !isScrollable || atStart);
+  wrapper.classList.toggle("at-end", !isScrollable || atEnd);
+}
+
+function syncPreviewTableMaxHeight(wrapper: HTMLDivElement): void {
+  const body = wrapper.closest<HTMLDivElement>(".preview-page-body");
+  if (!body) {
+    wrapper.style.maxHeight = "";
+    return;
+  }
+
+  const wrapperStyle = window.getComputedStyle(wrapper);
+  const marginBottom = Number.parseFloat(wrapperStyle.marginBottom) || 0;
+  const availableHeight = Math.floor(
+    previewPageBodyClientHeight(body) - wrapper.offsetTop - marginBottom,
+  );
+
+  if (availableHeight < MIN_PREVIEW_TABLE_SCROLL_HEIGHT) {
+    wrapper.style.maxHeight = "";
+    return;
+  }
+
+  wrapper.style.maxHeight = `${availableHeight}px`;
+}
+
+function previewPageBodyClientHeight(body: HTMLDivElement): number {
+  const page = body.closest<HTMLElement>(".preview-page");
+  if (!page?.classList.contains("is-oversized")) {
+    return body.clientHeight;
+  }
+
+  page.classList.remove("is-oversized");
+  const height = body.clientHeight;
+  page.classList.add("is-oversized");
+  return height;
 }
 
 function enhanceCitationLinks(): void {
