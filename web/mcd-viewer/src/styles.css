@@ -286,6 +286,32 @@ button:disabled {
   transform: scaleX(-1);
 }
 
+.sidebar-annotation-action {
+  border-color: rgb(15 118 110 / 36%);
+  color: #0f766e;
+  opacity: 0.72;
+}
+
+.sidebar-annotation-action span {
+  align-items: center;
+  background: rgb(15 118 110 / 24%);
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 20px;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  line-height: 1;
+  width: 22px;
+}
+
+.sidebar-annotation-action:hover,
+.sidebar-annotation-action:focus-visible,
+.sidebar-annotation-action.is-active {
+  border-color: rgb(15 118 110 / 58%);
+  opacity: 1;
+}
+
 .editor-content {
   height: 100%;
   overflow: auto;
@@ -1143,6 +1169,10 @@ textarea {
   min-height: 1.45em;
 }
 
+.preview-document.is-annotation-pick-mode .inline-edit-target {
+  cursor: crosshair;
+}
+
 .mcd-popup-backdrop {
   align-items: center;
   background: rgb(15 23 42 / 28%);
@@ -1301,13 +1331,14 @@ textarea {
 }
 
 .mcd-annotation-marker {
-  font-size: 1em;
+  display: inline-block;
+  font-size: 0.72em;
   font-weight: 600;
-  left: -1.35rem;
-  line-height: inherit;
-  margin-left: 0;
+  line-height: 1;
+  margin-left: 0.08em;
   opacity: 0.5;
-  position: absolute;
+  position: relative;
+  top: -0.35em;
   vertical-align: baseline;
 }
 
@@ -1319,6 +1350,16 @@ textarea {
 .mcd-annotation-marker a:hover,
 .mcd-annotation-marker a:focus {
   text-decoration: underline;
+}
+
+.mcd-rendered-annotation-marker {
+  font-size: 1em;
+  left: -1.35rem;
+  line-height: inherit;
+  margin-left: 0;
+  position: absolute;
+  top: auto;
+  z-index: 5;
 }
 
 .mcd-annotations {

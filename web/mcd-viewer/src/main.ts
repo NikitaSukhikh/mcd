@@ -310,6 +310,21 @@ interface AnnotationPreviewItem {
   annotation: EditableAnnotation;
   line: number;
   hasInlineMarker: boolean;
+  manualLocation?: { page: number; line: number };
+}
+
+interface RenderedLogicalLine {
+  body: HTMLDivElement;
+  top: number;
+  bottom: number;
+  sourceLine: number;
+}
+
+interface AnnotationPageLocation {
+  page: number;
+  line: number;
+  top?: number;
+  renderedPage?: number;
 }
 
 interface PackageState {
@@ -317,6 +332,7 @@ interface PackageState {
   zip: JSZip;
   manifest: Manifest;
   markdown: string;
+  blocks: DocumentBlock[];
   tables: EditableTable[];
   annotations: EditableAnnotation[];
   pageMap?: PageMap;
@@ -334,6 +350,8 @@ interface StateSnapshot {
   pageMap?: PageMap;
   pageMapPath?: string;
   removedAnnotationPaths: string[];
+  pendingMarginAnnotationId?: string;
+  pendingWordAnnotationId?: string;
 }
 
 interface SaveFilePickerWindow extends Window {
@@ -362,7 +380,13 @@ let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
 let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
 let inlineTableHeaderBindings = new WeakMap<HTMLElement, InlineTableHeaderBinding>();
 let previewBlockSources = new WeakMap<HTMLElement, SourceSpan>();
+let renderedAnnotationLocations = new Map<string, AnnotationPageLocation>();
+let manualAnnotationLocations = new Map<string, AnnotationPageLocation>();
+let renderedLogicalPageLines = new Map<number, RenderedLogicalLine[]>();
 let locallySavedAnnotationIds = new Set<string>();
+let pendingMarginAnnotationId: string | undefined;
+let pendingWordAnnotationId: string | undefined;
+let annotationWordPickArmed = false;
 let pendingInsertionAlignments: PendingInsertionAlignment[] = [];
 let undoStack: StateSnapshot[] = [];
 let redoStack: StateSnapshot[] = [];
@@ -410,6 +434,9 @@ app.innerHTML = `
             </button>
             <button id="redoButton" class="sidebar-action" type="button" aria-label="Redo" title="Redo" disabled>
               <span class="sidebar-history-icon is-redo" aria-hidden="true"></span>
+            </button>
+            <button id="quickAnnotationButton" class="sidebar-action sidebar-annotation-action" type="button" aria-label="Add annotation" title="Add annotation" disabled>
+              <span aria-hidden="true">+</span>
             </button>
           </div>
         </div>
@@ -478,6 +505,7 @@ if (!foundSidebarStrip) {
 const sidebarStrip = foundSidebarStrip;
 const undoButton = byId<HTMLButtonElement>("undoButton");
 const redoButton = byId<HTMLButtonElement>("redoButton");
+const quickAnnotationButton = byId<HTMLButtonElement>("quickAnnotationButton");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
 const markdownHighlight = byId<HTMLPreElement>("markdownHighlight");
@@ -506,6 +534,9 @@ undoButton.addEventListener("click", () => {
 });
 redoButton.addEventListener("click", () => {
   void redoOperation();
+});
+quickAnnotationButton.addEventListener("click", () => {
+  armWordAnnotationPick();
 });
 
 fileInput.addEventListener("change", () => {
@@ -543,6 +574,10 @@ window.addEventListener("beforeunload", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && activeModal) {
     closeActiveModal();
+    return;
+  }
+  if (event.key === "Escape" && annotationWordPickArmed) {
+    cancelWordAnnotationPick();
   }
 });
 
@@ -586,6 +621,7 @@ preview.addEventListener("click", (event) => {
     'a[href^="#mcd-annotation"]',
   );
   if (!link) {
+    createAnnotationFromWordClick(event);
     return;
   }
   const targetId = link.getAttribute("href")?.slice(1);
@@ -652,27 +688,7 @@ for (const tab of ["Text", "Tables", "Annotations"] as const) {
 }
 
 addAnnotationButton.addEventListener("click", () => {
-  if (!state) {
-    return;
-  }
-  recordHistoryCheckpoint();
-  const id = nextAnnotationId(state);
-  state.annotations.push({
-    id,
-    metadata: `annotations/${id}.annotation.json`,
-    targetText: JSON.stringify(sourceLineTarget(state.manifest.entrypoint, 1), null, 2),
-    page: firstPageValue(state),
-    line: "1",
-    kind: "comment",
-    status: "open",
-    body: "New annotation",
-    author: "",
-    labels: "",
-    created: new Date().toISOString(),
-  });
-  expandedAnnotationIds.add(id);
-  renderAnnotationsEditor();
-  markDirty();
+  armWordAnnotationPick();
 });
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -695,6 +711,8 @@ function captureStateSnapshot(): StateSnapshot | undefined {
     pageMap: state.pageMap ? cloneJson(state.pageMap) : undefined,
     pageMapPath: state.pageMapPath,
     removedAnnotationPaths: [...state.removedAnnotationPaths].sort(),
+    pendingMarginAnnotationId,
+    pendingWordAnnotationId,
   };
 }
 
@@ -821,6 +839,21 @@ async function restoreStateSnapshot(snapshot: StateSnapshot): Promise<void> {
   locallySavedAnnotationIds = new Set(
     [...locallySavedAnnotationIds].filter((id) => annotationIds.has(id)),
   );
+  renderedAnnotationLocations = new Map(
+    [...renderedAnnotationLocations].filter(([id]) => annotationIds.has(id)),
+  );
+  manualAnnotationLocations = new Map(
+    [...manualAnnotationLocations].filter(([id]) => annotationIds.has(id)),
+  );
+  pendingMarginAnnotationId =
+    snapshot.pendingMarginAnnotationId && annotationIds.has(snapshot.pendingMarginAnnotationId)
+      ? snapshot.pendingMarginAnnotationId
+      : undefined;
+  pendingWordAnnotationId =
+    snapshot.pendingWordAnnotationId && annotationIds.has(snapshot.pendingWordAnnotationId)
+      ? snapshot.pendingWordAnnotationId
+      : undefined;
+  renderedLogicalPageLines = new Map();
 
   const restored = captureStateSnapshot();
   state.dirty = restored ? contentKey(restored) !== savedContentKey : true;
@@ -843,6 +876,11 @@ async function loadFile(file: File): Promise<void> {
     state = await loadPackage(file.name, bytes);
     expandedAnnotationIds = new Set();
     locallySavedAnnotationIds = new Set();
+    pendingMarginAnnotationId = undefined;
+    pendingWordAnnotationId = undefined;
+    renderedAnnotationLocations = new Map();
+    manualAnnotationLocations = new Map();
+    renderedLogicalPageLines = new Map();
     resetHistory();
     previewPane.scrollTop = 0;
     window.scrollTo({ top: 0, left: 0 });
@@ -852,6 +890,11 @@ async function loadFile(file: File): Promise<void> {
     state = undefined;
     expandedAnnotationIds = new Set();
     locallySavedAnnotationIds = new Set();
+    pendingMarginAnnotationId = undefined;
+    pendingWordAnnotationId = undefined;
+    renderedAnnotationLocations = new Map();
+    manualAnnotationLocations = new Map();
+    renderedLogicalPageLines = new Map();
     resetHistory();
     hydrateUiFromState();
     showError(error);
@@ -864,6 +907,11 @@ async function createDocument(): Promise<void> {
   state = createDefaultPackageState();
   expandedAnnotationIds = new Set();
   locallySavedAnnotationIds = new Set();
+  pendingMarginAnnotationId = undefined;
+  pendingWordAnnotationId = undefined;
+  renderedAnnotationLocations = new Map();
+  manualAnnotationLocations = new Map();
+  renderedLogicalPageLines = new Map();
   previewEditMode = false;
   resetHistory();
   previewPane.scrollTop = 0;
@@ -901,6 +949,7 @@ function createDefaultPackageState(): PackageState {
     zip,
     manifest,
     markdown: "",
+    blocks: [],
     tables: [],
     annotations: [],
     removedAnnotationPaths: new Set(),
@@ -937,6 +986,7 @@ async function loadPackage(fileName: string, bytes: Uint8Array): Promise<Package
 
   const manifest = await readManifest(zip);
   const markdown = await readText(zip, manifest.entrypoint);
+  const blocks = plainMarkdownInput ? [] : await readDocumentBlocks(bytes);
   const tables = await readTables(zip, manifest.tables ?? []);
   const { pageMap, pageMapPath } = await readPageMap(zip, manifest);
   const annotations = await readAnnotations(
@@ -945,6 +995,7 @@ async function loadPackage(fileName: string, bytes: Uint8Array): Promise<Package
     manifest.entrypoint,
     markdown,
     pageMap,
+    blocks,
   );
 
   return {
@@ -952,6 +1003,7 @@ async function loadPackage(fileName: string, bytes: Uint8Array): Promise<Package
     zip,
     manifest,
     markdown,
+    blocks,
     tables,
     annotations,
     pageMap,
@@ -1001,22 +1053,36 @@ async function readTableViews(
   return views;
 }
 
+async function readDocumentBlocks(bytes: Uint8Array): Promise<DocumentBlock[]> {
+  try {
+    const doc = await openMcd(bytes);
+    return doc.blocks();
+  } catch {
+    return [];
+  }
+}
+
 async function readAnnotations(
   zip: JSZip,
   entries: AnnotationManifestEntry[],
   entrypoint: string,
   markdown: string,
   pageMap?: PageMap,
+  blocks: DocumentBlock[] = [],
 ): Promise<EditableAnnotation[]> {
   const annotations: EditableAnnotation[] = [];
   for (const entry of entries) {
     const raw = JSON.parse(await readText(zip, entry.metadata)) as Record<string, unknown>;
     const target = targetRecord(raw.target);
-    const line = targetSourceLine(target, entrypoint) ?? annotationMarkerLine(markdown, entry.id);
+    const line =
+      annotationTargetSourceLine(target, entrypoint, blocks) ??
+      annotationMarkerLine(markdown, entry.id);
     const targetText =
-      line && target?.type === "path" && target.path === entrypoint
-        ? JSON.stringify(sourceLineTarget(entrypoint, line), null, 2)
-        : JSON.stringify(target ?? { type: "document" }, null, 2);
+      target?.type === "path" && target.path === entrypoint
+        ? JSON.stringify(target, null, 2)
+        : line
+          ? JSON.stringify(sourceLineTarget(entrypoint, line), null, 2)
+          : JSON.stringify(target ?? { type: "document" }, null, 2);
     annotations.push({
       id: String(raw.id ?? entry.id),
       metadata: entry.metadata,
@@ -1048,13 +1114,67 @@ function targetRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function targetSourceLine(target: Record<string, unknown> | undefined, entrypoint: string): number | undefined {
+function targetSourceLine(
+  target: Record<string, unknown> | undefined,
+  entrypoint: string,
+): number | undefined {
   if (!target || target.type !== "path" || target.path !== entrypoint) {
     return undefined;
   }
   const source = targetRecord(target.source);
   const line = Number(source?.startLine);
   return Number.isInteger(line) && line > 0 ? line : undefined;
+}
+
+function annotationTargetSourceLine(
+  target: Record<string, unknown> | undefined,
+  entrypoint: string,
+  blocks: DocumentBlock[],
+): number | undefined {
+  return targetSourceLine(target, entrypoint) ?? blockSourceLineForTarget(target, blocks);
+}
+
+function blockSourceLineForTarget(
+  target: Record<string, unknown> | undefined,
+  blocks: DocumentBlock[],
+): number | undefined {
+  if (!target) {
+    return undefined;
+  }
+
+  const block = blocks.find((candidate) => blockMatchesAnnotationTarget(candidate, target));
+  return block?.source?.startLine;
+}
+
+function blockMatchesAnnotationTarget(
+  block: DocumentBlock,
+  target: Record<string, unknown>,
+): boolean {
+  if (target.type === "block") {
+    return typeof target.id === "string" && block.id === target.id;
+  }
+
+  if (target.type === "placement") {
+    return (
+      (block.type === "table_ref" || block.type === "image_ref") &&
+      placementField(block.placement, "ref") === target.ref
+    );
+  }
+
+  if (target.type === "table") {
+    return block.type === "table_ref" && placementField(block.placement, "table") === target.id;
+  }
+
+  if (target.type === "image") {
+    return block.type === "image_ref" && placementField(block.placement, "image") === target.id;
+  }
+
+  return false;
+}
+
+function placementField(placement: Record<string, unknown>, field: string): string | undefined {
+  const value = placement[field];
+  return typeof value === "string" ? value : undefined;
 }
 
 function sourceLineTarget(path: string, line: number): Record<string, unknown> {
@@ -1066,6 +1186,23 @@ function sourceLineTarget(path: string, line: number): Record<string, unknown> {
       startColumn: 1,
       endLine: line,
       endColumn: 1,
+    },
+  };
+}
+
+function sourceRangeTarget(
+  path: string,
+  start: { line: number; column: number },
+  end: { line: number; column: number },
+): Record<string, unknown> {
+  return {
+    type: "path",
+    path,
+    source: {
+      startLine: start.line,
+      startColumn: start.column,
+      endLine: end.line,
+      endColumn: end.column,
     },
   };
 }
@@ -1112,6 +1249,59 @@ function normalizeLineInput(value: string, markdown: string): string {
   return String(Math.min(line, markdownLineCount(markdown)));
 }
 
+function normalizePageLineInput(
+  value: string,
+  markdown: string,
+  page: number,
+  pageMap?: PageMap,
+): string {
+  const line = Number(value);
+  if (!Number.isInteger(line) || line < 1) {
+    return "";
+  }
+  return String(Math.min(line, renderedLogicalPageLineCount(page) ?? pageLineCount(markdown, page, pageMap)));
+}
+
+function annotationLineInputValue(
+  annotation: EditableAnnotation,
+  packageState: PackageState,
+): string {
+  const location = annotationUiLocation(annotation);
+  if (location) {
+    return String(location.line);
+  }
+
+  const line = Number(annotation.line);
+  if (!Number.isInteger(line) || line < 1) {
+    return "";
+  }
+  return String(pageLineForSourceLine(packageState.markdown, line, packageState.pageMap));
+}
+
+function annotationLineInputMax(annotation: EditableAnnotation, packageState: PackageState): string {
+  const page = Number(annotationPageInputValue(annotation, packageState));
+  return String(
+    renderedLogicalPageLineCount(page) ??
+      pageLineCount(packageState.markdown, page, packageState.pageMap),
+  );
+}
+
+function annotationPageInputValue(
+  annotation: EditableAnnotation,
+  packageState: PackageState,
+): string {
+  const location = annotationUiLocation(annotation);
+  if (location) {
+    return String(location.page);
+  }
+
+  return annotation.page || firstPageValue(packageState);
+}
+
+function annotationUiLocation(annotation: EditableAnnotation): AnnotationPageLocation | undefined {
+  return manualAnnotationLocations.get(annotation.id) ?? renderedAnnotationLocations.get(annotation.id);
+}
+
 function inferPageForLine(markdown: string, line: number, pageMap?: PageMap): string {
   const starts = pageStartLines(markdown, pageMap);
   const match = starts
@@ -1135,6 +1325,90 @@ function firstLineForPage(markdown: string, page: number, pageMap?: PageMap): nu
   const pageCount = Math.max(1, pageMap?.pages.length ?? 1);
   const lineCount = markdownLineCount(markdown);
   return Math.max(1, Math.floor(((page - 1) / pageCount) * lineCount) + 1);
+}
+
+function pageLineForSourceLine(markdown: string, line: number, pageMap?: PageMap): number {
+  const range = pageSourceRangeForSourceLine(markdown, line, pageMap);
+  return Math.max(
+    1,
+    contentSourceLines(markdown, range.startLine, line).length,
+  );
+}
+
+function sourceLineForPageLine(
+  markdown: string,
+  page: number,
+  pageLine: number,
+  pageMap?: PageMap,
+): number {
+  const range = pageSourceRange(markdown, page, pageMap);
+  const lines = contentSourceLines(markdown, range.startLine, range.endLine);
+  const index = Math.min(lines.length - 1, Math.max(0, pageLine - 1));
+  return lines[index] ?? range.startLine;
+}
+
+function pageLineCount(markdown: string, page: number, pageMap?: PageMap): number {
+  const range = pageSourceRange(markdown, page, pageMap);
+  return Math.max(1, contentSourceLines(markdown, range.startLine, range.endLine).length);
+}
+
+function pageSourceRange(
+  markdown: string,
+  page: number,
+  pageMap?: PageMap,
+): { startLine: number; endLine: number } {
+  const lineCount = markdownLineCount(markdown);
+  const starts = pageStartLines(markdown, pageMap);
+  const start = starts.find((entry) => entry.page === page);
+  if (!start) {
+    const fallbackStart = firstLineForPage(markdown, page, pageMap);
+    const fallbackEnd = firstLineForPage(markdown, page + 1, pageMap) - 1;
+    return {
+      startLine: fallbackStart,
+      endLine: Math.max(fallbackStart, Math.min(lineCount, fallbackEnd)),
+    };
+  }
+
+  const nextStart = starts.find((entry) => entry.line > start.line);
+  return {
+    startLine: start.line,
+    endLine: nextStart ? nextStart.line - 1 : lineCount,
+  };
+}
+
+function pageStartForSourceLine(
+  markdown: string,
+  line: number,
+  pageMap?: PageMap,
+): { page: number; line: number } {
+  return (
+    pageStartLines(markdown, pageMap)
+      .filter((start) => start.line <= line)
+      .sort((left, right) => right.line - left.line)[0] ?? { page: 1, line: 1 }
+  );
+}
+
+function pageSourceRangeForSourceLine(
+  markdown: string,
+  line: number,
+  pageMap?: PageMap,
+): { startLine: number; endLine: number } {
+  const start = pageStartForSourceLine(markdown, line, pageMap);
+  return pageSourceRange(markdown, start.page, pageMap);
+}
+
+function contentSourceLines(markdown: string, startLine: number, endLine: number): number[] {
+  const lines = markdown.split(/\r\n|\r|\n/);
+  const startIndex = Math.max(0, startLine - 1);
+  const endIndex = Math.min(lines.length - 1, Math.max(startIndex, endLine - 1));
+  const sourceLines: number[] = [];
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim() && !isStandaloneGeneratedAnnotationLine(line)) {
+      sourceLines.push(index + 1);
+    }
+  }
+  return sourceLines;
 }
 
 function pageStartLines(markdown: string, pageMap?: PageMap): Array<{ page: number; line: number }> {
@@ -1213,10 +1487,13 @@ function hydrateUiFromState(): void {
     button.disabled = !hasState;
   }
   addAnnotationButton.disabled = !hasState;
+  quickAnnotationButton.disabled = !hasState;
   if (!hasState) {
     previewEditMode = false;
+    annotationWordPickArmed = false;
   }
   syncEditModeButton();
+  syncAnnotationPickUi();
   setMarkdownEditorValue(state?.markdown ?? "");
   renderTablesEditor();
   renderAnnotationsEditor();
@@ -2250,6 +2527,23 @@ function renderAnnotationsEditor(): void {
       if (locallySavedAnnotationIds.delete(previousId)) {
         locallySavedAnnotationIds.add(annotation.id);
       }
+      if (pendingMarginAnnotationId === previousId) {
+        pendingMarginAnnotationId = annotation.id;
+      }
+      if (pendingWordAnnotationId === previousId) {
+        pendingWordAnnotationId = annotation.id;
+      }
+      renameAnnotationMarkerInMarkdown(previousId, annotation.id);
+      const renderedLocation = renderedAnnotationLocations.get(previousId);
+      if (renderedLocation) {
+        renderedAnnotationLocations.delete(previousId);
+        renderedAnnotationLocations.set(annotation.id, renderedLocation);
+      }
+      const manualLocation = manualAnnotationLocations.get(previousId);
+      if (manualLocation) {
+        manualAnnotationLocations.delete(previousId);
+        manualAnnotationLocations.set(annotation.id, manualLocation);
+      }
     });
     bindAnnotationInput(card, annotation, "kind", annotationHistoryKey, (value) => {
       annotation.kind = value;
@@ -2266,22 +2560,49 @@ function renderAnnotationsEditor(): void {
     bindAnnotationInput(card, annotation, "page", annotationHistoryKey, (value) => {
       annotation.page = value;
       if (state && value) {
-        annotation.line = firstLineForPage(state.markdown, Number(value), state.pageMap).toString();
+        const page = Number(value);
+        const sourceLine =
+          sourceLineForRenderedLogicalPageLine(page, 1) ??
+          sourceLineForPageLine(state.markdown, page, 1, state.pageMap);
+        annotation.line = sourceLine.toString();
+        manualAnnotationLocations.set(annotation.id, manualAnnotationLocationForPageLine(page, 1));
         const lineInput = card.querySelector<HTMLInputElement>('[data-field="line"]');
         if (lineInput) {
-          lineInput.value = annotation.line;
+          lineInput.value = annotationLineInputValue(annotation, state);
+          lineInput.max = annotationLineInputMax(annotation, state);
         }
       }
       updateAnnotationTargetFromLocation(annotation);
       updateAnnotationTargetTextarea(card, annotation);
     });
     bindAnnotationInput(card, annotation, "line", annotationHistoryKey, (value) => {
-      annotation.line = normalizeLineInput(value, state?.markdown ?? "");
+      if (state) {
+        const page = Number(annotationPageInputValue(annotation, state));
+        const pageLine = normalizePageLineInput(value, state.markdown, page, state.pageMap);
+        if (pageLine) {
+          const line = Number(pageLine);
+          const sourceLine =
+            sourceLineForRenderedLogicalPageLine(page, line) ??
+            sourceLineForPageLine(state.markdown, page, line, state.pageMap);
+          annotation.line = sourceLine.toString();
+          manualAnnotationLocations.set(annotation.id, manualAnnotationLocationForPageLine(page, line));
+        } else {
+          annotation.line = "";
+          manualAnnotationLocations.delete(annotation.id);
+        }
+      } else {
+        annotation.line = normalizeLineInput(value, "");
+      }
       if (state && annotation.line) {
-        annotation.page = inferPageForLine(state.markdown, Number(annotation.line), state.pageMap);
+        annotation.page = annotationPageInputValue(annotation, state);
         const pageInput = card.querySelector<HTMLSelectElement>('[data-field="page"]');
         if (pageInput) {
           pageInput.value = annotation.page;
+        }
+        const lineInput = card.querySelector<HTMLInputElement>('[data-field="line"]');
+        if (lineInput) {
+          lineInput.value = annotationLineInputValue(annotation, state);
+          lineInput.max = annotationLineInputMax(annotation, state);
         }
       }
       updateAnnotationTargetFromLocation(annotation);
@@ -2326,6 +2647,15 @@ function renderAnnotationsEditor(): void {
         }
         expandedAnnotationIds.delete(annotation.id);
         locallySavedAnnotationIds.delete(annotation.id);
+        renderedAnnotationLocations.delete(annotation.id);
+        manualAnnotationLocations.delete(annotation.id);
+        if (pendingMarginAnnotationId === annotation.id) {
+          pendingMarginAnnotationId = undefined;
+        }
+        if (pendingWordAnnotationId === annotation.id) {
+          pendingWordAnnotationId = undefined;
+        }
+        removeAnnotationMarkerFromMarkdown(annotation.id);
         state?.annotations.splice(index, 1);
         renderAnnotationsEditor();
         markDirty();
@@ -2377,14 +2707,15 @@ function annotationDetailsHtml(
         <div class="field">
           <label>Page</label>
           <select data-field="page">
-            ${annotationPageOptions(annotation.page)}
+            ${annotationPageOptions(annotationPageInputValue(annotation, packageState))}
           </select>
         </div>
         <div class="field">
           <label>Line</label>
-          <input data-field="line" type="number" min="1" max="${markdownLineCount(
-            packageState.markdown,
-          )}" value="${escapeAttr(annotation.line)}" />
+          <input data-field="line" type="number" min="1" max="${annotationLineInputMax(
+            annotation,
+            packageState,
+          )}" value="${escapeAttr(annotationLineInputValue(annotation, packageState))}" />
         </div>
       </div>
       <div class="field">
@@ -2453,10 +2784,20 @@ function bindAnnotationInput(
     resetAnnotationSaveButton(root);
     markDirty();
   };
-  if (input instanceof HTMLSelectElement) {
+  if (input instanceof HTMLSelectElement || field === "line") {
     input.addEventListener("change", handleChange);
   } else {
     input.addEventListener("input", handleChange);
+  }
+  if (field === "line") {
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key !== "Enter") {
+        return;
+      }
+      keyboardEvent.preventDefault();
+      input.blur();
+    });
   }
 }
 
@@ -2486,9 +2827,11 @@ function syncAnnotationLocationFromTarget(annotation: EditableAnnotation): void 
   }
   try {
     const target = targetRecord(JSON.parse(annotation.targetText));
-    const line = targetSourceLine(target, state.manifest.entrypoint);
+    const line = annotationTargetSourceLine(target, state.manifest.entrypoint, state.blocks);
     annotation.line = line?.toString() ?? "";
     annotation.page = line ? inferPageForLine(state.markdown, line, state.pageMap) : "";
+    manualAnnotationLocations.delete(annotation.id);
+    renderedAnnotationLocations.delete(annotation.id);
   } catch {
     // Keep the user's in-progress JSON edit intact until it parses.
   }
@@ -2505,9 +2848,12 @@ function updateAnnotationLocationInputs(root: HTMLElement, annotation: EditableA
   const pageInput = root.querySelector<HTMLSelectElement>('[data-field="page"]');
   const lineInput = root.querySelector<HTMLInputElement>('[data-field="line"]');
   if (pageInput) {
-    pageInput.value = annotation.page;
+    pageInput.value = state ? annotationPageInputValue(annotation, state) : annotation.page;
   }
-  if (lineInput) {
+  if (lineInput && state) {
+    lineInput.value = annotationLineInputValue(annotation, state);
+    lineInput.max = annotationLineInputMax(annotation, state);
+  } else if (lineInput) {
     lineInput.value = annotation.line;
   }
 }
@@ -2540,6 +2886,7 @@ function setPreviewEditMode(enabled: boolean): void {
       previewAutoDoneTimer = undefined;
     }
     closeActiveModal();
+    cancelWordAnnotationPick();
     renderTablesEditor();
     queueRender();
   }
@@ -2551,6 +2898,34 @@ function syncEditModeButton(): void {
     button.setAttribute("aria-pressed", previewEditMode ? "true" : "false");
     button.classList.toggle("primary", previewEditMode);
   }
+}
+
+function armWordAnnotationPick(): void {
+  if (!state) {
+    return;
+  }
+  annotationWordPickArmed = true;
+  setActiveTab("annotations");
+  setSidebarExpanded(true);
+  syncAnnotationPickUi();
+  setStatus("Click a word in the preview to attach the annotation.");
+}
+
+function cancelWordAnnotationPick(): void {
+  if (!annotationWordPickArmed) {
+    return;
+  }
+  annotationWordPickArmed = false;
+  syncAnnotationPickUi();
+  setStatus("");
+}
+
+function syncAnnotationPickUi(): void {
+  quickAnnotationButton.classList.toggle("is-active", annotationWordPickArmed);
+  addAnnotationButton.classList.toggle("is-active", annotationWordPickArmed);
+  quickAnnotationButton.setAttribute("aria-pressed", annotationWordPickArmed ? "true" : "false");
+  addAnnotationButton.setAttribute("aria-pressed", annotationWordPickArmed ? "true" : "false");
+  preview.classList.toggle("is-annotation-pick-mode", annotationWordPickArmed);
 }
 
 function schedulePreviewEditAutoDone(): void {
@@ -2604,12 +2979,14 @@ async function renderAndValidate(): Promise<void> {
     const validation = doc.validate();
     renderDiagnostics(validation);
     const blocks = validation.valid ? doc.blocks() : [];
+    state.blocks = blocks;
     const markdown = validation.valid ? doc.markdown({ expandTables: false }) : state.markdown;
     await renderMarkdownPreview(markdown, blocks);
     setStatus(
       validation.valid ? "" : "Document has validation errors. Preview is rendered from the Markdown editor.",
     );
   } catch (error) {
+    state.blocks = [];
     await renderMarkdownPreview(state.markdown);
     showError(error);
   }
@@ -2623,24 +3000,35 @@ function annotationPreviewItems(markdown: string): AnnotationPreviewItem[] {
   const lineCount = markdownLineCount(markdown);
   const inlinePositions = inlineAnnotationPositions(markdown);
   const sortable = state.annotations.map((annotation, index) => {
-    const inlinePosition = inlinePositions.get(annotation.id);
+    const manualLocation = manualAnnotationLocations.get(annotation.id);
+    const inlinePosition = manualLocation ? undefined : inlinePositions.get(annotation.id);
     const targetLine = Number(annotation.line);
+    const sourceLine = Number.isInteger(targetLine) && targetLine > 0 ? targetLine : 1;
     const line =
       inlinePosition?.line ??
-      (Number.isInteger(targetLine) && targetLine > 0 ? targetLine : 1);
+      annotationPreviewSourceLine(annotation, sourceLine);
+    const page =
+      manualLocation?.renderedPage ??
+      manualLocation?.page ??
+      Number(inferPageForLine(markdown, line, state?.pageMap));
+    const pageLine = manualLocation?.line ?? pageLineForSourceLine(markdown, line, state?.pageMap);
     return {
       id: annotation.id,
       annotation,
       line: Math.min(Math.max(1, line), lineCount),
       column: inlinePosition?.column ?? Number.MAX_SAFE_INTEGER,
       hasInlineMarker: Boolean(inlinePosition),
+      manualLocation,
+      page,
+      pageLine,
       manifestIndex: index,
     };
   });
 
   sortable.sort((left, right) => {
     return (
-      left.line - right.line ||
+      left.page - right.page ||
+      left.pageLine - right.pageLine ||
       left.column - right.column ||
       left.manifestIndex - right.manifestIndex
     );
@@ -2651,8 +3039,39 @@ function annotationPreviewItems(markdown: string): AnnotationPreviewItem[] {
     annotation: item.annotation,
     line: item.line,
     hasInlineMarker: item.hasInlineMarker,
+    manualLocation: item.manualLocation,
     number: index + 1,
   }));
+}
+
+function annotationPreviewSourceLine(annotation: EditableAnnotation, sourceLine: number): number {
+  const block =
+    annotationTargetBlock(annotation) ??
+    sourceLineBlock(sourceLine, state?.blocks ?? []);
+  if (block?.source && (block.type === "table_ref" || block.type === "image_ref")) {
+    return block.source.endLine;
+  }
+  return sourceLine;
+}
+
+function annotationTargetBlock(annotation: EditableAnnotation): DocumentBlock | undefined {
+  if (!state) {
+    return undefined;
+  }
+
+  try {
+    const target = targetRecord(JSON.parse(annotation.targetText));
+    return state.blocks.find((block) => blockMatchesAnnotationTarget(block, target ?? {}));
+  } catch {
+    return undefined;
+  }
+}
+
+function sourceLineBlock(sourceLine: number, blocks: DocumentBlock[]): DocumentBlock | undefined {
+  return blocks.find((block) => {
+    const source = block.source;
+    return Boolean(source && source.startLine <= sourceLine && sourceLine <= source.endLine);
+  });
 }
 
 function inlineAnnotationPositions(markdown: string): Map<string, { line: number; column: number }> {
@@ -2692,7 +3111,7 @@ function annotatedPreviewMarkdown(markdown: string, items: AnnotationPreviewItem
   const itemById = new Map(items.map((item) => [item.id, item]));
   const lineMarkers = new Map<number, AnnotationPreviewItem[]>();
   for (const item of items) {
-    if (item.hasInlineMarker) {
+    if (item.hasInlineMarker || item.manualLocation) {
       continue;
     }
     const markers = lineMarkers.get(item.line) ?? [];
@@ -2879,6 +3298,272 @@ async function renderMarkdownPreview(markdown: string, blocks: DocumentBlock[] =
   repaginatePreviewWithScrollableTables();
   enableInlinePreviewEditing(blocks);
   setupLazyPreviewTables();
+  syncRenderedLogicalPageLines();
+  renderManualAnnotationMarkers(annotationItems);
+  syncRenderedAnnotationLocations();
+  if (activeTab === "annotations" && !annotationsEditor.contains(document.activeElement)) {
+    renderAnnotationsEditor();
+  }
+}
+
+function syncRenderedLogicalPageLines(): void {
+  renderedLogicalPageLines = new Map();
+  if (!state) {
+    return;
+  }
+
+  for (const page of pageChoices(state)) {
+    const range = pageSourceRange(state.markdown, page.number, state.pageMap);
+    renderedLogicalPageLines.set(page.number, renderedLogicalLinesForSourceRange(range));
+  }
+}
+
+function renderedLogicalLinesForSourceRange(range: { startLine: number; endLine: number }): RenderedLogicalLine[] {
+  const records: RenderedLogicalLine[] = [];
+  for (const body of Array.from(preview.querySelectorAll<HTMLDivElement>(".preview-page-body"))) {
+    const bodyTop = body.getBoundingClientRect().top;
+    for (const element of Array.from(body.children)) {
+      if (!(element instanceof HTMLElement) || !previewElementHasInsertionContent(element)) {
+        continue;
+      }
+
+      const source = sourceForPreviewElement(element);
+      if (!source || !sourceOverlapsRange(source, range)) {
+        continue;
+      }
+
+      const rects = renderedLineRects(element);
+      if (rects.length === 0) {
+        const rect = element.getBoundingClientRect();
+        if (rect.height > 0) {
+          rects.push(rect);
+        }
+      }
+
+      let localLineIndex = 0;
+      for (const rect of rects) {
+        if (rect.height <= 0) {
+          continue;
+        }
+
+        const top = rect.top - bodyTop;
+        const previous = records.at(-1);
+        if (previous?.body === body && Math.abs(previous.top - top) < 3) {
+          previous.bottom = Math.max(previous.bottom, rect.bottom - bodyTop);
+          continue;
+        }
+
+        records.push({
+          body,
+          top,
+          bottom: rect.bottom - bodyTop,
+          sourceLine: Math.min(source.endLine, source.startLine + localLineIndex),
+        });
+        localLineIndex += 1;
+      }
+    }
+  }
+  return records;
+}
+
+function renderedLineRects(element: HTMLElement): DOMRect[] {
+  const rects: DOMRect[] = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const parent = node.parentElement;
+    if (
+      node.textContent?.trim() &&
+      !parent?.closest(".mcd-annotation-marker, .mcd-citation-ref")
+    ) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      rects.push(
+        ...Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0),
+      );
+      range.detach();
+    }
+    node = walker.nextNode();
+  }
+  return rects.sort((left, right) => left.top - right.top || left.left - right.left);
+}
+
+function sourceOverlapsRange(source: SourceSpan, range: { startLine: number; endLine: number }): boolean {
+  return source.startLine <= range.endLine && source.endLine >= range.startLine;
+}
+
+function renderedLogicalPageLineCount(page: number): number | undefined {
+  const count = renderedLogicalPageLines.get(page)?.length;
+  return count ? Math.max(1, count) : undefined;
+}
+
+function manualAnnotationLocationForPageLine(page: number, line: number): AnnotationPageLocation {
+  return {
+    page,
+    line,
+    top: renderedLogicalPageLines.get(page)?.[line - 1]?.top,
+  };
+}
+
+function renderManualAnnotationMarkers(items: AnnotationPreviewItem[]): void {
+  preview
+    .querySelectorAll<HTMLElement>(".mcd-rendered-annotation-marker")
+    .forEach((marker) => marker.remove());
+
+  const occupiedLines = new Map<string, number>();
+  for (const item of items) {
+    if (!item.manualLocation) {
+      continue;
+    }
+
+    const target = manualAnnotationMarkerTarget(item.manualLocation);
+    if (!target) {
+      continue;
+    }
+
+    const lineKey = `${item.manualLocation.page}:${item.manualLocation.line}`;
+    const offset = occupiedLines.get(lineKey) ?? 0;
+    occupiedLines.set(lineKey, offset + 1);
+
+    const marker = document.createElement("sup");
+    marker.id = `mcd-annotation-ref-${item.id}`;
+    marker.className = "mcd-annotation-marker mcd-rendered-annotation-marker";
+    marker.style.top = `${Math.max(0, target.top)}px`;
+    if (offset > 0) {
+      marker.style.transform = `translateX(${offset * 0.85}rem)`;
+    }
+
+    const link = document.createElement("a");
+    link.href = `#mcd-annotation-${item.id}`;
+    link.setAttribute("aria-label", `Annotation ${item.number}`);
+    link.textContent = String(item.number);
+    marker.appendChild(link);
+    target.body.appendChild(marker);
+  }
+}
+
+function manualAnnotationMarkerTarget(
+  location: AnnotationPageLocation,
+): { body: HTMLDivElement; top: number } | undefined {
+  const body = preview
+    .querySelector<HTMLElement>(
+      `.preview-page[data-page-number="${location.renderedPage ?? location.page}"]`,
+    )
+    ?.querySelector<HTMLDivElement>(".preview-page-body");
+  if (body && typeof location.top === "number" && Number.isFinite(location.top)) {
+    return { body, top: location.top };
+  }
+
+  const logicalLine = renderedLogicalPageLines.get(location.page)?.[location.line - 1];
+  if (logicalLine) {
+    return { body: logicalLine.body, top: logicalLine.top };
+  }
+
+  if (!body) {
+    return undefined;
+  }
+  return {
+    body,
+    top: (Math.max(1, location.line) - 1) * previewInsertionLineHeight(body),
+  };
+}
+
+function sourceLineForRenderedLogicalPageLine(page: number, line: number): number | undefined {
+  const lines = renderedLogicalPageLines.get(page);
+  if (!lines || lines.length === 0) {
+    return undefined;
+  }
+  const index = Math.min(lines.length - 1, Math.max(0, line - 1));
+  return lines[index]?.sourceLine;
+}
+
+function renderedLogicalLineForElement(
+  page: number,
+  element: HTMLElement,
+  body: HTMLDivElement,
+): number | undefined {
+  const lines = renderedLogicalPageLines.get(page);
+  if (!lines || lines.length === 0) {
+    return undefined;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const bodyTop = body.getBoundingClientRect().top;
+  const y = rect.top + rect.height / 2 - bodyTop;
+  const index = lines.findIndex((line) => {
+    return line.body === body && line.top - 2 <= y && y <= line.bottom + 2;
+  });
+  return index >= 0 ? index + 1 : undefined;
+}
+
+function syncRenderedAnnotationLocations(): void {
+  renderedAnnotationLocations = new Map();
+  for (const marker of Array.from(preview.querySelectorAll<HTMLElement>(".mcd-annotation-marker[id]"))) {
+    const id = marker.id.replace(/^mcd-annotation-ref-/, "");
+    if (!id) {
+      continue;
+    }
+
+    const body = marker.closest<HTMLDivElement>(".preview-page-body");
+    const page = marker.closest<HTMLElement>(".preview-page");
+    if (!body || !page) {
+      continue;
+    }
+
+    const pageNumber = Number(page.dataset.pageNumber);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+      continue;
+    }
+
+    const annotation = state?.annotations.find((candidate) => candidate.id === id);
+    const sourceLine = Number(annotation?.line);
+    const logicalPage =
+      Number.isInteger(sourceLine) && sourceLine > 0 && state
+        ? Number(inferPageForLine(state.markdown, sourceLine, state.pageMap))
+        : pageNumber;
+    renderedAnnotationLocations.set(id, {
+      page: logicalPage,
+      line:
+        renderedLogicalLineForElement(logicalPage, marker, body) ??
+        (Number.isInteger(sourceLine) && sourceLine > 0 && state
+          ? pageLineForSourceLine(state.markdown, sourceLine, state.pageMap)
+          : renderedLineForElement(marker, body)),
+    });
+  }
+}
+
+function renderedLineForElement(element: HTMLElement, body: HTMLDivElement): number {
+  const lineHeight = previewInsertionLineHeight(body);
+  const elementRect = element.getBoundingClientRect();
+  const bodyRect = body.getBoundingClientRect();
+  const y = elementRect.top + elementRect.height / 2 - bodyRect.top;
+  return Math.max(1, Math.floor(y / lineHeight) + 1);
+}
+
+function renderedPageLineCount(pageNumber: number): number | undefined {
+  const body = preview
+    .querySelector<HTMLElement>(`.preview-page[data-page-number="${pageNumber}"]`)
+    ?.querySelector<HTMLDivElement>(".preview-page-body");
+  if (!body) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.floor(previewPageBodyClientHeight(body) / previewInsertionLineHeight(body)));
+}
+
+function sourceLineForRenderedAnnotationLocation(pageNumber: number, line: number): number | undefined {
+  const body = preview
+    .querySelector<HTMLElement>(`.preview-page[data-page-number="${pageNumber}"]`)
+    ?.querySelector<HTMLDivElement>(".preview-page-body");
+  if (!body) {
+    return undefined;
+  }
+
+  const lineHeight = previewInsertionLineHeight(body);
+  return markdownInsertionLine({
+    body,
+    y: (Math.max(1, line) - 0.5) * lineHeight,
+  });
 }
 
 function renderEmptyFirstHeadingPlaceholder(markdown: string, blocks: DocumentBlock[]): void {
@@ -3005,6 +3690,287 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
       renderInsertionGuides();
     }
   });
+}
+
+function createAnnotationFromWordClick(event: MouseEvent): boolean {
+  if (!state || !annotationWordPickArmed || event.button !== 0) {
+    return false;
+  }
+
+  const target = event.target as Element | null;
+  if (
+    !target ||
+    target.closest(
+      "a, button, input, textarea, select, .mcd-annotation-marker, .mcd-citation-ref, .mcd-annotations, table",
+    )
+  ) {
+    return false;
+  }
+
+  const element = target.closest<HTMLElement>(".inline-edit-target");
+  const binding = element ? inlineTextBindings.get(element) : undefined;
+  if (!element || !binding?.source) {
+    return false;
+  }
+
+  const word = clickedWordAnchor(event, element);
+  if (!word) {
+    return false;
+  }
+
+  const inserted = createAnnotationAtWordAnchor(element, binding.source, word);
+  if (!inserted) {
+    return false;
+  }
+
+  annotationWordPickArmed = false;
+  syncAnnotationPickUi();
+  setStatus("");
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+
+interface ClickedWordAnchor {
+  text: string;
+  occurrenceIndex: number;
+}
+
+function clickedWordAnchor(event: MouseEvent, element: HTMLElement): ClickedWordAnchor | undefined {
+  const caret = caretTextPositionFromPoint(event.clientX, event.clientY);
+  if (!caret || !element.contains(caret.node)) {
+    return undefined;
+  }
+
+  const text = caret.node.textContent ?? "";
+  const bounds = wordBoundsAtOffset(text, caret.offset);
+  if (!bounds) {
+    return undefined;
+  }
+
+  const before = textBeforeNodeOffset(element, caret.node, bounds.start);
+  return {
+    text: text.slice(bounds.start, bounds.end),
+    occurrenceIndex: wordTokens(before).length,
+  };
+}
+
+function caretTextPositionFromPoint(x: number, y: number): { node: Text; offset: number } | undefined {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const position = doc.caretPositionFromPoint?.(x, y);
+  if (position?.offsetNode.nodeType === Node.TEXT_NODE) {
+    return { node: position.offsetNode as Text, offset: position.offset };
+  }
+
+  const range = doc.caretRangeFromPoint?.(x, y);
+  if (range?.startContainer.nodeType === Node.TEXT_NODE) {
+    return { node: range.startContainer as Text, offset: range.startOffset };
+  }
+  return undefined;
+}
+
+function wordBoundsAtOffset(text: string, offset: number): { start: number; end: number } | undefined {
+  if (!text) {
+    return undefined;
+  }
+
+  let index = Math.min(Math.max(0, offset), text.length - 1);
+  if (!isWordCharacter(text[index] ?? "") && index > 0 && isWordCharacter(text[index - 1] ?? "")) {
+    index -= 1;
+  }
+  if (!isWordCharacter(text[index] ?? "")) {
+    return undefined;
+  }
+
+  let start = index;
+  let end = index + 1;
+  while (start > 0 && isWordCharacter(text[start - 1] ?? "")) {
+    start -= 1;
+  }
+  while (end < text.length && isWordCharacter(text[end] ?? "")) {
+    end += 1;
+  }
+  return { start, end };
+}
+
+function isWordCharacter(value: string): boolean {
+  return /^[\p{L}\p{N}_'-]$/u.test(value);
+}
+
+function textBeforeNodeOffset(root: HTMLElement, textNode: Text, offset: number): string {
+  let text = "";
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const parent = node.parentElement;
+    if (!parent?.closest(".mcd-annotation-marker, .mcd-citation-ref")) {
+      if (node === textNode) {
+        return text + (node.textContent ?? "").slice(0, offset);
+      }
+      text += node.textContent ?? "";
+    }
+    node = walker.nextNode();
+  }
+  return text;
+}
+
+function wordTokens(value: string): string[] {
+  return value.match(/[\p{L}\p{N}_]+(?:['-][\p{L}\p{N}_]+)*/gu) ?? [];
+}
+
+function createAnnotationAtWordAnchor(
+  element: HTMLElement,
+  source: SourceSpan,
+  word: ClickedWordAnchor,
+): boolean {
+  if (!state) {
+    return false;
+  }
+
+  const sourceText = markdownTextForSource(source);
+  const wordMatch = rawWordMatch(sourceText.raw, word.text, word.occurrenceIndex);
+  if (!wordMatch) {
+    return false;
+  }
+
+  recordHistoryCheckpoint();
+  discardPendingWordAnnotation();
+  discardPendingMarginAnnotation();
+
+  const id = nextAnnotationId(state);
+  const marker = annotationMarkerToken(id);
+  const insertionOffset = markdownInsertionOffsetAfterWord(sourceText.raw, wordMatch.end);
+  state.markdown =
+    state.markdown.slice(0, sourceText.globalStart + insertionOffset) +
+    marker +
+    state.markdown.slice(sourceText.globalStart + insertionOffset);
+  setMarkdownEditorValue(state.markdown);
+
+  const start = sourceLocationForOffset(source, sourceText.raw, wordMatch.start);
+  const end = sourceLocationForOffset(source, sourceText.raw, wordMatch.end);
+  const line = start.line;
+  state.annotations.push({
+    id,
+    metadata: `annotations/${id}.annotation.json`,
+    targetText: JSON.stringify(sourceRangeTarget(state.manifest.entrypoint, start, end), null, 2),
+    page: inferPageForLine(state.markdown, line, state.pageMap),
+    line: String(line),
+    kind: "comment",
+    status: "open",
+    body: "New annotation",
+    author: "",
+    labels: "",
+    created: new Date().toISOString(),
+  });
+  pendingWordAnnotationId = id;
+  expandedAnnotationIds.add(id);
+  setActiveTab("annotations");
+  setSidebarExpanded(true);
+  renderAnnotationsEditor();
+  markDirty();
+  return true;
+}
+
+function annotationMarkerToken(id: string): string {
+  return `[[annotation:${id}]]`;
+}
+
+function markdownTextForSource(source: SourceSpan): { raw: string; globalStart: number } {
+  const lines = state?.markdown.split(/\r\n|\r|\n/) ?? [];
+  const startLine = Math.max(1, source.startLine);
+  const endLine = Math.max(startLine, source.endLine);
+  const globalStart =
+    startLine <= 1 ? 0 : lines.slice(0, startLine - 1).join("\n").length + 1;
+  return {
+    raw: lines.slice(startLine - 1, endLine).join("\n"),
+    globalStart,
+  };
+}
+
+function rawWordMatch(
+  raw: string,
+  word: string,
+  occurrenceIndex: number,
+): { start: number; end: number } | undefined {
+  const normalized = word.toLocaleLowerCase();
+  const ignoredRanges = annotationMarkerRanges(raw);
+  const pattern = /[\p{L}\p{N}_]+(?:['-][\p{L}\p{N}_]+)*/gu;
+  let seen = 0;
+  let fallback: { start: number; end: number } | undefined;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(raw)) !== null) {
+    if (rangeOverlapsAny(match.index, pattern.lastIndex, ignoredRanges)) {
+      continue;
+    }
+    if ((match[0] ?? "").toLocaleLowerCase() !== normalized) {
+      continue;
+    }
+    const candidate = { start: match.index, end: pattern.lastIndex };
+    fallback ??= candidate;
+    if (seen === occurrenceIndex) {
+      return candidate;
+    }
+    seen += 1;
+  }
+  return fallback;
+}
+
+function annotationMarkerRanges(raw: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const pattern = /\[\[annotation:[A-Za-z0-9][A-Za-z0-9_.-]*\]\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(raw)) !== null) {
+    ranges.push({ start: match.index, end: pattern.lastIndex });
+  }
+  return ranges;
+}
+
+function rangeOverlapsAny(
+  start: number,
+  end: number,
+  ranges: Array<{ start: number; end: number }>,
+): boolean {
+  return ranges.some((range) => start < range.end && range.start < end);
+}
+
+function markdownInsertionOffsetAfterWord(raw: string, wordEnd: number): number {
+  let offset = wordEnd;
+  if (raw.startsWith("](", offset)) {
+    const close = raw.indexOf(")", offset + 2);
+    if (close >= 0) {
+      return close + 1;
+    }
+  }
+
+  const closers = ["**", "__", "~~", "`", "*", "_"];
+  let advanced = true;
+  while (advanced) {
+    advanced = false;
+    for (const closer of closers) {
+      if (raw.startsWith(closer, offset)) {
+        offset += closer.length;
+        advanced = true;
+        break;
+      }
+    }
+  }
+  return offset;
+}
+
+function sourceLocationForOffset(
+  source: SourceSpan,
+  raw: string,
+  offset: number,
+): { line: number; column: number } {
+  const prefix = raw.slice(0, Math.max(0, offset));
+  const lines = prefix.split("\n");
+  return {
+    line: source.startLine + lines.length - 1,
+    column: (lines.at(-1)?.length ?? 0) + 1,
+  };
 }
 
 function emptyFirstHeadingBlockForElement(element: HTMLElement): EditableTextBlock | undefined {
@@ -3905,13 +4871,20 @@ function renderInsertionGuides(): void {
     layer.setAttribute("aria-hidden", "false");
 
     for (let index = 0; index < lineCount; index += 1) {
-      if (occupiedLines.has(index)) {
-        continue;
-      }
       const line = document.createElement("div");
       line.className = "mcd-insert-line";
       line.style.top = `${index * lineHeight}px`;
       line.style.height = `${lineHeight}px`;
+      line.style.pointerEvents = occupiedLines.has(index) ? "none" : "";
+      const target: InsertLineTarget = {
+        body,
+        y: index * lineHeight + lineHeight / 2,
+      };
+
+      if (occupiedLines.has(index)) {
+        layer.appendChild(line);
+        continue;
+      }
 
       const textTarget = document.createElement("button");
       textTarget.type = "button";
@@ -3920,10 +4893,7 @@ function renderInsertionGuides(): void {
       textTarget.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        focusPlainTextAtLine({
-          body,
-          y: index * lineHeight + lineHeight / 2,
-        });
+        focusPlainTextAtLine(target);
       });
 
       const plus = document.createElement("button");
@@ -3934,10 +4904,7 @@ function renderInsertionGuides(): void {
       plus.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        showInsertTypePopup({
-          body,
-          y: index * lineHeight + lineHeight / 2,
-        });
+        showInsertTypePopup(target);
       });
       line.appendChild(textTarget);
       line.appendChild(plus);
@@ -3976,9 +4943,184 @@ function previewOccupiedInsertionLines(
   return occupied;
 }
 
+function createAnnotationAtRenderedTarget(target: InsertLineTarget): void {
+  if (!state) {
+    return;
+  }
+
+  const location = renderedAnnotationLocationForTarget(target);
+  const sourceLine =
+    sourceLineForRenderedLogicalPageLine(location.page, location.line) ??
+    markdownInsertionLine(target);
+  createAnnotationAtSourceLine(sourceLine, location, { fromMargin: true });
+}
+
+function renderedAnnotationLocationForTarget(target: InsertLineTarget): AnnotationPageLocation {
+  const pageNumber = Number(target.body.closest<HTMLElement>(".preview-page")?.dataset.pageNumber) || 1;
+  const lineHeight = previewInsertionLineHeight(target.body);
+  const gridLine = Math.max(1, Math.floor(target.y / lineHeight) + 1);
+  const top = Math.max(0, target.y - lineHeight / 2);
+
+  const matches = Array.from(renderedLogicalPageLines.entries())
+    .flatMap(([page, lines]) =>
+      lines.map((line, index) => ({
+        page,
+        line: index + 1,
+        distance:
+          line.body === target.body
+            ? distanceFromRange(target.y, line.top, line.bottom)
+            : Number.POSITIVE_INFINITY,
+      })),
+    )
+    .filter((candidate) => Number.isFinite(candidate.distance))
+    .sort((left, right) => left.distance - right.distance || left.line - right.line);
+
+  const match = matches[0];
+  return match && match.distance <= lineHeight
+    ? { page: match.page, line: match.line, top, renderedPage: pageNumber }
+    : { page: pageNumber, line: gridLine, top, renderedPage: pageNumber };
+}
+
+function distanceFromRange(value: number, start: number, end: number): number {
+  if (value < start) {
+    return start - value;
+  }
+  if (value > end) {
+    return value - end;
+  }
+  return 0;
+}
+
+function createAnnotationAtSourceLine(
+  sourceLine: number,
+  location: AnnotationPageLocation,
+  options: { fromMargin?: boolean } = {},
+): void {
+  if (!state) {
+    return;
+  }
+
+  recordHistoryCheckpoint();
+  if (options.fromMargin) {
+    discardPendingMarginAnnotation();
+    discardPendingWordAnnotation();
+  }
+
+  const id = nextAnnotationId(state);
+  const line = Math.min(Math.max(1, sourceLine), markdownLineCount(state.markdown));
+  const page = String(location.page || Number(inferPageForLine(state.markdown, line, state.pageMap)));
+  state.annotations.push({
+    id,
+    metadata: `annotations/${id}.annotation.json`,
+    targetText: JSON.stringify(sourceLineTarget(state.manifest.entrypoint, line), null, 2),
+    page,
+    line: String(line),
+    kind: "comment",
+    status: "open",
+    body: "New annotation",
+    author: "",
+    labels: "",
+    created: new Date().toISOString(),
+  });
+  expandedAnnotationIds.add(id);
+  manualAnnotationLocations.set(id, {
+    page: Number(page),
+    line: Math.max(1, location.line),
+    top: location.top,
+    renderedPage: location.renderedPage,
+  });
+  if (options.fromMargin) {
+    pendingMarginAnnotationId = id;
+  }
+  setActiveTab("annotations");
+  setSidebarExpanded(true);
+  renderAnnotationsEditor();
+  markDirty();
+}
+
+function discardPendingMarginAnnotation(): void {
+  if (!state || !pendingMarginAnnotationId) {
+    return;
+  }
+
+  const id = pendingMarginAnnotationId;
+  pendingMarginAnnotationId = undefined;
+  if (locallySavedAnnotationIds.has(id)) {
+    return;
+  }
+
+  const index = state.annotations.findIndex((annotation) => annotation.id === id);
+  if (index < 0) {
+    return;
+  }
+
+  const [annotation] = state.annotations.splice(index, 1);
+  state.removedAnnotationPaths.add(annotation.metadata);
+  if (annotation.originalMetadata) {
+    state.removedAnnotationPaths.add(annotation.originalMetadata);
+  }
+  expandedAnnotationIds.delete(id);
+  locallySavedAnnotationIds.delete(id);
+  renderedAnnotationLocations.delete(id);
+  manualAnnotationLocations.delete(id);
+}
+
+function discardPendingWordAnnotation(): void {
+  if (!state || !pendingWordAnnotationId) {
+    return;
+  }
+
+  const id = pendingWordAnnotationId;
+  pendingWordAnnotationId = undefined;
+  if (locallySavedAnnotationIds.has(id)) {
+    return;
+  }
+
+  removeAnnotationMarkerFromMarkdown(id);
+  const index = state.annotations.findIndex((annotation) => annotation.id === id);
+  if (index < 0) {
+    return;
+  }
+
+  const [annotation] = state.annotations.splice(index, 1);
+  state.removedAnnotationPaths.add(annotation.metadata);
+  if (annotation.originalMetadata) {
+    state.removedAnnotationPaths.add(annotation.originalMetadata);
+  }
+  expandedAnnotationIds.delete(id);
+  locallySavedAnnotationIds.delete(id);
+  renderedAnnotationLocations.delete(id);
+  manualAnnotationLocations.delete(id);
+}
+
+function removeAnnotationMarkerFromMarkdown(id: string): void {
+  if (!state) {
+    return;
+  }
+  const next = state.markdown.replaceAll(annotationMarkerToken(id), "");
+  if (next === state.markdown) {
+    return;
+  }
+  state.markdown = next;
+  setMarkdownEditorValue(state.markdown);
+}
+
+function renameAnnotationMarkerInMarkdown(previousId: string, nextId: string): void {
+  if (!state || previousId === nextId) {
+    return;
+  }
+  const next = state.markdown.replaceAll(annotationMarkerToken(previousId), annotationMarkerToken(nextId));
+  if (next === state.markdown) {
+    return;
+  }
+  state.markdown = next;
+  setMarkdownEditorValue(state.markdown);
+}
+
 function previewElementHasInsertionContent(element: HTMLElement): boolean {
   if (
     element.classList.contains("mcd-insert-lines") ||
+    element.classList.contains("mcd-rendered-annotation-marker") ||
     element.classList.contains("empty-state")
   ) {
     return false;
@@ -4950,6 +6092,14 @@ function schedulePreviewTableRepagination(): void {
   previewTableRepaginateFrame = window.requestAnimationFrame(() => {
     previewTableRepaginateFrame = undefined;
     repaginatePreviewWithScrollableTables();
+    syncRenderedLogicalPageLines();
+    if (state) {
+      renderManualAnnotationMarkers(annotationPreviewItems(state.markdown));
+    }
+    syncRenderedAnnotationLocations();
+    if (activeTab === "annotations" && !annotationsEditor.contains(document.activeElement)) {
+      renderAnnotationsEditor();
+    }
   });
 }
 
@@ -5476,12 +6626,14 @@ function renderMath(tex: string, displayMode: boolean): string {
 
 function annotationToJson(annotation: EditableAnnotation): Record<string, unknown> {
   const line = Number(annotation.line);
+  const parsedTarget = safeAnnotationTarget(annotation.targetText);
   const output: Record<string, unknown> = {
     id: annotation.id,
     target:
-      state && Number.isInteger(line) && line > 0
+      parsedTarget ??
+      (state && Number.isInteger(line) && line > 0
         ? sourceLineTarget(state.manifest.entrypoint, line)
-        : (JSON.parse(annotation.targetText) as unknown),
+        : { type: "document" }),
     kind: annotation.kind,
     status: annotation.status,
     body: annotation.body,
@@ -5502,6 +6654,14 @@ function annotationToJson(annotation: EditableAnnotation): Record<string, unknow
   return output;
 }
 
+function safeAnnotationTarget(targetText: string): Record<string, unknown> | undefined {
+  try {
+    return targetRecord(JSON.parse(targetText));
+  } catch {
+    return undefined;
+  }
+}
+
 async function saveAnnotationLocally(annotation: EditableAnnotation): Promise<void> {
   if (!state) {
     return;
@@ -5509,6 +6669,12 @@ async function saveAnnotationLocally(annotation: EditableAnnotation): Promise<vo
   try {
     applyStateToZip(state);
     locallySavedAnnotationIds.add(annotation.id);
+    if (pendingMarginAnnotationId === annotation.id) {
+      pendingMarginAnnotationId = undefined;
+    }
+    if (pendingWordAnnotationId === annotation.id) {
+      pendingWordAnnotationId = undefined;
+    }
     state.dirty = true;
     fileNameEl.textContent = `${state.fileName} (edited)`;
     await renderAndValidate();
@@ -5561,6 +6727,8 @@ async function saveDocument(): Promise<void> {
       URL.revokeObjectURL(link.href);
     }
     state.dirty = false;
+    pendingMarginAnnotationId = undefined;
+    pendingWordAnnotationId = undefined;
     const snapshot = captureStateSnapshot();
     savedContentKey = snapshot ? contentKey(snapshot) : savedContentKey;
     fileNameEl.textContent = state.fileName;
