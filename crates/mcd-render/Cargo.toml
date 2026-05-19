@@ -11,14 +11,14 @@ description = "HTML renderer for Markdown CSV Document packages."
 
 [dependencies]
 base64 = "0.22"
-indexmap = { version = "*", features = ["serde"] }
+indexmap = { version = "2.14.0", features = ["serde"] }
 katex = { version = "0.4.6", default-features = false, features = ["duktape"] }
 mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
 serde_json = "1"
 
 [dev-dependencies]
-insta = "*"
-zip = "*"
+insta = "1.47.2"
+zip = "8.6.0"
 
 [lints]
 workspace = true

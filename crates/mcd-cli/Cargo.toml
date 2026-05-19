@@ -19,7 +19,7 @@ clap = { version = "4", features = ["derive"] }
 mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
 mcd-render = { version = "0.1.0-alpha.0", path = "../mcd-render" }
 serde_json = "1"
-zip = "*"
+zip = "8.6.0"
 
 [lints]
 workspace = true

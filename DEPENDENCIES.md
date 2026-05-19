@@ -12,22 +12,22 @@ This document lists all dependencies required to build and develop the MCD (Mark
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-jsonschema = "*"
+jsonschema = "0.46.5"
 csv = "1"
-zip = "*"
-comrak = "*"
+zip = "8.6.0"
+comrak = "0.52.0"
 thiserror = "1"
-indexmap = { version = "*", features = ["serde"] }
-sha2 = "*"
-rust_decimal = { version = "*", features = ["serde"] }
-time = { version = "*", features = ["serde", "parsing", "formatting"] }
-camino = "*"
-mime_guess = "*"
-roxmltree = "*"
+indexmap = { version = "2.14.0", features = ["serde"] }
+sha2 = "0.11.0"
+rust_decimal = { version = "1.42.0", features = ["serde"] }
+time = { version = "0.3.47", features = ["serde", "parsing", "formatting"] }
+camino = "1.2.2"
+mime_guess = "2.0.5"
+roxmltree = "0.21.1"
 
 [dev-dependencies]
-insta = "*"
-proptest = "*"
+insta = "1.47.2"
+proptest = "1.11.0"
 ```
 
 ### CLI Crate (`mcd-cli`)
@@ -238,7 +238,6 @@ composer test
 
 ## Version Notes
 
-- Pin exact versions before production release
-- Wildcard versions (`*`) shown above are for planning only
+- Publishable Rust manifests use explicit version requirements.
 - Run `cargo update` to get latest compatible versions
 - Use `cargo audit` regularly for security updates
