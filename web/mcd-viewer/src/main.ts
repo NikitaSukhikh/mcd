@@ -208,6 +208,14 @@ interface InlineTableBinding {
 interface InlineTextBinding {
   block?: EditableTextBlock;
   source?: SourceSpan;
+  headingSplit?: InlineHeadingSplitBinding;
+}
+
+interface InlineHeadingSplitBinding {
+  block: Extract<EditableTextBlock, { type: "heading" }>;
+  source: SourceSpan;
+  heading: HTMLElement;
+  continuation: HTMLElement;
 }
 
 interface EditableAnnotation {
@@ -1657,6 +1665,11 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
     if (event.key !== "Enter") {
       return;
     }
+    const binding = inlineTextBindings.get(element);
+    if (binding?.block?.type === "heading" && binding.source && previewEditMode) {
+      splitHeadingInlineEdit(event, element, binding);
+      return;
+    }
     event.stopPropagation();
   });
   element.addEventListener("input", () => {
@@ -1664,10 +1677,118 @@ function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock):
       return;
     }
     const binding = inlineTextBindings.get(element);
+    if (binding?.headingSplit) {
+      updateMarkdownFromHeadingSplit(binding.headingSplit);
+      return;
+    }
     if (binding?.block) {
       updateMarkdownFromInlineText(element, binding);
     }
   });
+}
+
+function splitHeadingInlineEdit(
+  event: KeyboardEvent,
+  element: HTMLElement,
+  binding: InlineTextBinding,
+): void {
+  if (!binding.block || binding.block.type !== "heading" || !binding.source) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const split = editableSelectionSplit(element);
+  element.textContent = split.before || editableText(element);
+
+  const continuation = document.createElement("p");
+  continuation.tabIndex = 0;
+  continuation.className = "inline-edit-target inline-editable inline-editable-heading-continuation";
+  continuation.contentEditable = "true";
+  continuation.spellcheck = true;
+  continuation.setAttribute("aria-label", "Editing text");
+  continuation.textContent = split.after;
+  element.insertAdjacentElement("afterend", continuation);
+
+  const headingSplit: InlineHeadingSplitBinding = {
+    block: binding.block,
+    source: binding.source,
+    heading: element,
+    continuation,
+  };
+  binding.headingSplit = headingSplit;
+  inlineTextBindings.set(continuation, { headingSplit });
+
+  continuation.addEventListener("keydown", (continuationEvent) => {
+    if (continuationEvent.key === "Enter") {
+      continuationEvent.stopPropagation();
+    }
+  });
+  continuation.addEventListener("input", () => {
+    if (previewEditMode) {
+      updateMarkdownFromHeadingSplit(headingSplit);
+    }
+  });
+
+  updateMarkdownFromHeadingSplit(headingSplit);
+  focusEditableEnd(continuation);
+}
+
+function editableSelectionSplit(element: HTMLElement): { before: string; after: string } {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return { before: editableText(element), after: "" };
+  }
+
+  const range = selection.getRangeAt(0);
+  if (!element.contains(range.commonAncestorContainer)) {
+    return { before: editableText(element), after: "" };
+  }
+
+  const beforeRange = range.cloneRange();
+  beforeRange.selectNodeContents(element);
+  beforeRange.setEnd(range.startContainer, range.startOffset);
+
+  const afterRange = range.cloneRange();
+  afterRange.selectNodeContents(element);
+  afterRange.setStart(range.endContainer, range.endOffset);
+
+  return {
+    before: normalizedRangeText(beforeRange),
+    after: normalizedRangeText(afterRange),
+  };
+}
+
+function normalizedRangeText(range: Range): string {
+  return range.toString().replace(/\u00a0/g, " ").trim();
+}
+
+function focusEditableEnd(element: HTMLElement): void {
+  element.focus();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function updateMarkdownFromHeadingSplit(binding: InlineHeadingSplitBinding): void {
+  if (!state) {
+    return;
+  }
+  const heading = editableText(binding.heading);
+  const continuation = editableText(binding.continuation);
+  const continuationLines = continuation
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const replacement = [
+    `${"#".repeat(binding.block.level)} ${heading.trim()}`,
+    ...continuationLines,
+  ].join("\n");
+  binding.source = replaceMarkdownSource(binding.source, replacement);
 }
 
 function updateMarkdownFromInlineText(element: HTMLElement, binding: InlineTextBinding): void {

@@ -737,6 +737,14 @@ textarea {
   white-space: pre-wrap;
 }
 
+.inline-editable-heading-continuation {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  margin-top: 0.35rem;
+  min-height: 1.5em;
+}
+
 .inline-editable:focus,
 .preview-document.is-edit-mode .inline-editable {
   background: #ffffff;
