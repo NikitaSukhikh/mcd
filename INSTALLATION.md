@@ -105,11 +105,20 @@ The Composer package is `mcd-nix/parser`.
 composer require mcd-nix/parser
 ```
 
-The PHP wrapper delegates parsing and conversion work to the `mcd` CLI, so the
-CLI must also be installed and available on `PATH`.
+The PHP package is a wrapper around the `mcd` CLI. Composer installs the PHP
+client code, but PHP developers still need the `mcd` binary installed and
+available on `PATH`.
+
+Install the CLI with Cargo:
 
 ```bash
 cargo install mcd-cli --version 0.1.0-alpha.0
+```
+
+Or download a prebuilt binary from the GitHub Release:
+
+```text
+https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.0
 ```
 
 Example:
@@ -144,7 +153,7 @@ $mcd = new Client('/path/to/mcd');
 | Rust | `mcd-wasm` | Raw WebAssembly bindings. |
 | Python | `mcdee` | Import as `mcd`. |
 | npm | `@mcd-nix/parser` | Includes embedded WebAssembly. |
-| Composer | `mcd-nix/parser` | Requires the `mcd` CLI. |
+| Composer | `mcd-nix/parser` | PHP wrapper; requires the `mcd` CLI or prebuilt binary. |
 
 ## Troubleshooting
 
