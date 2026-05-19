@@ -5,6 +5,7 @@ Local-first browser viewer/editor for `.mcd` packages.
 Current scope:
 
 - Open a local `.mcd` package or plain Markdown `.mcd` file.
+- Create a new empty `.mcd` package for Markdown entrypoint editing.
 - Validate through the existing `@mcd/parser` WebAssembly binding.
 - Render an expanded Markdown preview in the browser.
 - Edit the Markdown entrypoint.

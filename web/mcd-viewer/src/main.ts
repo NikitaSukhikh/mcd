@@ -16,6 +16,7 @@ import "./styles.css";
 
 const MCD_MIMETYPE = "application/vnd.mcd+zip";
 const UNSAVED_CHANGES_PROMPT = "Save changes?";
+const DEFAULT_ENTRYPOINT = "content/main.md";
 const textDecoder = new TextDecoder();
 type ActiveTab = "text" | "tables" | "annotations";
 
@@ -286,6 +287,7 @@ app.innerHTML = `
       <div class="file-name" id="fileName"></div>
       <div class="toolbar">
         <button id="openButton" type="button">Upload</button>
+        <button id="createButton" type="button">Create</button>
         <button id="topEditModeButton" type="button" disabled aria-pressed="false">Edit</button>
         <button id="topSaveButton" class="primary" type="button" disabled>Save</button>
       </div>
@@ -342,6 +344,7 @@ const fileNameEl = byId<HTMLDivElement>("fileName");
 const workspace = byId<HTMLElement>("workspace");
 const fileInput = byId<HTMLInputElement>("fileInput");
 const openButton = byId<HTMLButtonElement>("openButton");
+const createButton = byId<HTMLButtonElement>("createButton");
 const editModeButtons = [
   byId<HTMLButtonElement>("topEditModeButton"),
   byId<HTMLButtonElement>("floatingEditModeButton"),
@@ -362,6 +365,9 @@ const preview = byId<HTMLElement>("preview");
 const floatingActions = byId<HTMLDivElement>("floatingActions");
 
 openButton.addEventListener("click", () => fileInput.click());
+createButton.addEventListener("click", () => {
+  void createDocument();
+});
 sidebarToggle.addEventListener("click", () => {
   setSidebarExpanded(!sidebarExpanded);
 });
@@ -532,6 +538,56 @@ async function loadFile(file: File): Promise<void> {
   }
 }
 
+async function createDocument(): Promise<void> {
+  setStatus("Creating empty MCD document...");
+  clearDiagnostics();
+  state = createDefaultPackageState();
+  expandedAnnotationIds = new Set();
+  locallySavedAnnotationIds = new Set();
+  previewEditMode = false;
+  previewPane.scrollTop = 0;
+  window.scrollTo({ top: 0, left: 0 });
+  setActiveTab("text");
+  setSidebarExpanded(true);
+  hydrateUiFromState();
+  await renderAndValidate();
+  markdownEditor.focus();
+  setStatus("Created empty MCD document.");
+}
+
+function createDefaultPackageState(): PackageState {
+  const zip = new JSZip();
+  const manifest: Manifest = {
+    format: "MCD",
+    version: "0.1",
+    profile: "MCD-Core",
+    entrypoint: DEFAULT_ENTRYPOINT,
+    tables: [],
+    images: [],
+    annotations: [],
+    assets: [],
+  };
+
+  zip.file("mimetype", `${MCD_MIMETYPE}\n`, { compression: "STORE" });
+  zip.file("manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
+  zip.file(DEFAULT_ENTRYPOINT, "");
+  zip.folder("tables");
+  zip.folder("images");
+  zip.folder("assets");
+
+  return {
+    fileName: "untitled.mcd",
+    zip,
+    manifest,
+    markdown: "",
+    tables: [],
+    annotations: [],
+    removedAnnotationPaths: new Set(),
+    dirty: false,
+    plainMarkdownInput: false,
+  };
+}
+
 async function loadPackage(fileName: string, bytes: Uint8Array): Promise<PackageState> {
   let zip: JSZip;
   let plainMarkdownInput = false;
@@ -549,13 +605,13 @@ async function loadPackage(fileName: string, bytes: Uint8Array): Promise<Package
           format: "MCD",
           version: "0.1",
           profile: "MCD-Core",
-          entrypoint: "content/main.md",
+          entrypoint: DEFAULT_ENTRYPOINT,
         },
         null,
         2,
       ),
     );
-    zip.file("content/main.md", textDecoder.decode(bytes));
+    zip.file(DEFAULT_ENTRYPOINT, textDecoder.decode(bytes));
   }
 
   const manifest = await readManifest(zip);

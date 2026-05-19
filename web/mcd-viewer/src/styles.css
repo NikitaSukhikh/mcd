@@ -323,6 +323,7 @@ button:disabled {
 
 .workspace.is-sidebar-expanded .status-panel {
   border-bottom: 0;
+  padding-left: 52px;
 }
 
 .status-line {
