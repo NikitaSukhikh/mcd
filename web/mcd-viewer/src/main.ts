@@ -194,6 +194,20 @@ interface TablePlacement {
   display: "table" | "chart";
 }
 
+type EditableTextBlock = Extract<
+  DocumentBlock,
+  { type: "heading" | "paragraph" | "list" | "quote" }
+>;
+
+interface InlineTableBinding {
+  row: Record<string, string>;
+  column: TableViewColumn & { label: string; schema: TableColumn };
+}
+
+interface InlineTextBinding {
+  block?: EditableTextBlock;
+}
+
 interface EditableAnnotation {
   id: string;
   metadata: string;
@@ -251,6 +265,9 @@ let activeTab: ActiveTab = "text";
 let renderTimer: number | undefined;
 let assetUrls: string[] = [];
 let expandedAnnotationIds = new Set<string>();
+let previewEditMode = false;
+let inlineTextBindings = new WeakMap<HTMLElement, InlineTextBinding>();
+let inlineTableBindings = new WeakMap<HTMLElement, InlineTableBinding>();
 let locallySavedAnnotationIds = new Set<string>();
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -263,15 +280,14 @@ app.innerHTML = `
     <header class="topbar">
       <div class="brand">
         <img class="brand-logo" src="/MCD_logo_tight.png" alt="MCD" />
-        <div>
-          <div class="brand-title">MCD Viewer</div>
-          <div class="file-name" id="fileName"></div>
-        </div>
+        <div class="brand-title">MCD Viewer</div>
       </div>
+      <div class="file-name" id="fileName"></div>
       <div class="toolbar">
         <button id="openButton" type="button">Upload</button>
         <button id="validateButton" type="button" disabled>Validate</button>
-        <button id="saveButton" class="primary" type="button" disabled>Save .mcd</button>
+        <button id="editModeButton" type="button" disabled aria-pressed="false">Edit</button>
+        <button id="saveButton" class="primary" type="button" disabled>Save</button>
       </div>
     </header>
     <main class="workspace">
@@ -315,6 +331,7 @@ const fileNameEl = byId<HTMLDivElement>("fileName");
 const fileInput = byId<HTMLInputElement>("fileInput");
 const openButton = byId<HTMLButtonElement>("openButton");
 const validateButton = byId<HTMLButtonElement>("validateButton");
+const editModeButton = byId<HTMLButtonElement>("editModeButton");
 const saveButton = byId<HTMLButtonElement>("saveButton");
 const statusLine = byId<HTMLDivElement>("statusLine");
 const diagnosticsEl = byId<HTMLDivElement>("diagnostics");
@@ -335,6 +352,10 @@ fileInput.addEventListener("change", () => {
 
 validateButton.addEventListener("click", () => {
   void renderAndValidate();
+});
+
+editModeButton.addEventListener("click", () => {
+  setPreviewEditMode(!previewEditMode);
 });
 
 saveButton.addEventListener("click", () => {
@@ -780,8 +801,13 @@ function hydrateUiFromState(): void {
     : "";
   markdownEditor.disabled = !hasState;
   validateButton.disabled = !hasState;
+  editModeButton.disabled = !hasState;
   saveButton.disabled = !hasState;
   addAnnotationButton.disabled = !hasState;
+  if (!hasState) {
+    previewEditMode = false;
+  }
+  syncEditModeButton();
   markdownEditor.value = state?.markdown ?? "";
   renderTablesEditor();
   renderAnnotationsEditor();
@@ -1206,6 +1232,28 @@ function markDirty(options: { render?: boolean } = {}): void {
   }
 }
 
+function setPreviewEditMode(enabled: boolean): void {
+  if (!state) {
+    enabled = false;
+  }
+  if (previewEditMode === enabled) {
+    return;
+  }
+  previewEditMode = enabled;
+  applyPreviewEditMode();
+  syncEditModeButton();
+  if (!enabled && state) {
+    renderTablesEditor();
+    queueRender();
+  }
+}
+
+function syncEditModeButton(): void {
+  editModeButton.textContent = previewEditMode ? "Done" : "Edit";
+  editModeButton.setAttribute("aria-pressed", previewEditMode ? "true" : "false");
+  editModeButton.classList.toggle("primary", previewEditMode);
+}
+
 function queueRender(): void {
   if (renderTimer) {
     window.clearTimeout(renderTimer);
@@ -1430,6 +1478,8 @@ function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
   if (!state) {
     return;
   }
+  inlineTextBindings = new WeakMap();
+  inlineTableBindings = new WeakMap();
   for (const marker of Array.from(
     preview.querySelectorAll<HTMLElement>(".mcd-annotation-marker, .mcd-citation-ref"),
   )) {
@@ -1437,10 +1487,12 @@ function enableInlinePreviewEditing(blocks: DocumentBlock[]): void {
   }
   enableInlineTextEditing(blocks);
   enableInlineTableEditing();
+  applyPreviewEditMode();
 }
 
 function enableInlineTextEditing(blocks: DocumentBlock[]): void {
   const candidates = editableTextCandidates();
+  const boundElements = new Set<HTMLElement>();
   let cursor = 0;
 
   for (const block of blocks) {
@@ -1452,9 +1504,9 @@ function enableInlineTextEditing(blocks: DocumentBlock[]): void {
       continue;
     }
 
-    const matchIndex = candidates.findIndex((candidate, index) => {
-      return index >= cursor && normalizedEditableText(editableText(candidate)) === blockText;
-    });
+    const matchIndex = candidates.findIndex(
+      (candidate, index) => index >= cursor && candidateMatchesTextBlock(candidate, blockText),
+    );
     if (matchIndex < 0) {
       continue;
     }
@@ -1462,6 +1514,14 @@ function enableInlineTextEditing(blocks: DocumentBlock[]): void {
     const element = candidates[matchIndex];
     cursor = matchIndex + 1;
     bindInlineTextElement(element, block);
+    boundElements.add(element);
+  }
+
+  for (const element of candidates) {
+    if (boundElements.has(element) || inlineTextBindings.has(element)) {
+      continue;
+    }
+    bindInlineTextElement(element);
   }
 }
 
@@ -1477,18 +1537,14 @@ function editableTextCandidates(): HTMLElement[] {
 
 function isEditableTextBlock(
   block: DocumentBlock,
-): block is Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }> {
+): block is EditableTextBlock {
   return ["heading", "paragraph", "list", "quote"].includes(block.type);
 }
 
-function bindInlineTextElement(
-  element: HTMLElement,
-  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
-): void {
-  element.contentEditable = "true";
-  element.spellcheck = true;
-  element.classList.add("inline-editable");
-  element.setAttribute("aria-label", "Edit text");
+function bindInlineTextElement(element: HTMLElement, block?: EditableTextBlock): void {
+  element.tabIndex = 0;
+  element.classList.add("inline-edit-target");
+  inlineTextBindings.set(element, { block });
 
   element.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
@@ -1498,18 +1554,17 @@ function bindInlineTextElement(
     element.blur();
   });
   element.addEventListener("input", () => {
-    updateMarkdownFromInlineText(element, block);
-  });
-  element.addEventListener("blur", () => {
-    renderTablesEditor();
-    queueRender();
+    if (!previewEditMode) {
+      return;
+    }
+    const binding = inlineTextBindings.get(element);
+    if (binding?.block) {
+      updateMarkdownFromInlineText(element, binding.block);
+    }
   });
 }
 
-function updateMarkdownFromInlineText(
-  element: HTMLElement,
-  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
-): void {
+function updateMarkdownFromInlineText(element: HTMLElement, block: EditableTextBlock): void {
   if (!state || !block.source) {
     return;
   }
@@ -1522,7 +1577,7 @@ function updateMarkdownFromInlineText(
 
 function markdownReplacementForInlineText(
   element: HTMLElement,
-  block: Extract<DocumentBlock, { type: "heading" | "paragraph" | "list" | "quote" }>,
+  block: EditableTextBlock,
   source: SourceSpan,
   text: string,
 ): string {
@@ -1584,6 +1639,55 @@ function editableText(element: HTMLElement): string {
 
 function normalizedEditableText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function candidateMatchesTextBlock(candidate: HTMLElement, blockText: string): boolean {
+  const candidateText = normalizedEditableText(editableText(candidate));
+  if (candidateText === blockText || candidateText.includes(blockText)) {
+    return true;
+  }
+
+  const requiredWords = significantWords(blockText).slice(0, 8);
+  if (requiredWords.length === 0) {
+    return false;
+  }
+  const candidateWords = significantWords(candidateText);
+  let cursor = 0;
+  for (const word of requiredWords) {
+    const index = candidateWords.indexOf(word, cursor);
+    if (index < 0) {
+      return false;
+    }
+    cursor = index + 1;
+  }
+  return true;
+}
+
+function significantWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter((word) => word.length > 2) ?? [];
+}
+
+function applyPreviewEditMode(): void {
+  preview.classList.toggle("is-edit-mode", previewEditMode);
+  for (const element of Array.from(preview.querySelectorAll<HTMLElement>(".inline-edit-target"))) {
+    const isEditable = previewEditMode && !element.closest(".mcd-annotations");
+    element.contentEditable = isEditable ? "true" : "false";
+    element.spellcheck = isEditable;
+    element.classList.toggle("inline-editable", isEditable);
+    element.setAttribute(
+      "aria-label",
+      isEditable
+        ? inlineTableBindings.has(element)
+          ? "Editing table cell"
+          : "Editing text"
+        : inlineTableBindings.has(element)
+          ? "Table cell"
+          : "Text block",
+    );
+  }
 }
 
 function enableInlineTableEditing(): void {
@@ -1731,10 +1835,10 @@ function bindInlineTable(
       if (!column) {
         return;
       }
-      cell.contentEditable = "true";
-      cell.spellcheck = true;
-      cell.classList.add("inline-editable");
-      cell.setAttribute("aria-label", `${tableState.manifest.id} ${column.name} row ${rowIndex + 1}`);
+      cell.tabIndex = 0;
+      cell.classList.add("inline-edit-target");
+      cell.title = `${tableState.manifest.id} ${column.name} row ${rowIndex + 1}`;
+      inlineTableBindings.set(cell, { row, column });
       cell.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") {
           return;
@@ -1743,12 +1847,11 @@ function bindInlineTable(
         cell.blur();
       });
       cell.addEventListener("input", () => {
+        if (!previewEditMode) {
+          return;
+        }
         row[column.name] = parseInlineTableValue(cell.textContent ?? "", column);
         markDirty({ render: false });
-      });
-      cell.addEventListener("blur", () => {
-        renderTablesEditor();
-        queueRender();
       });
     });
   });
@@ -1865,12 +1968,6 @@ function appendNodeToPreviewPage(node: Node, cursor: PreviewPageCursor): Preview
   cursor.page.body.appendChild(node);
   if (!isPreviewPageOverflowing(cursor.page.body)) {
     return cursor;
-  }
-
-  const remainder =
-    node instanceof HTMLElement ? splitParagraphElementToFit(cursor.page.body, node) : undefined;
-  if (remainder) {
-    return appendNodeToPreviewPage(remainder, nextPreviewPage(cursor));
   }
 
   const heading = previousHeadingForOverflowingNode(cursor.page.body, node);

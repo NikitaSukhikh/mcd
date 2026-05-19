@@ -54,7 +54,7 @@ button:disabled {
   border-bottom: 1px solid #dde3e8;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: 1fr auto 1fr;
   min-height: 58px;
   padding: 10px 18px;
 }
@@ -80,6 +80,7 @@ button:disabled {
   color: #62727f;
   font-size: 13px;
   overflow: hidden;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -538,9 +539,8 @@ textarea {
   text-align: left;
 }
 
-.inline-editable {
+.inline-edit-target {
   border-radius: 4px;
-  cursor: text;
   outline: 1px solid transparent;
   outline-offset: 2px;
   transition:
@@ -548,12 +548,25 @@ textarea {
     outline-color 120ms ease;
 }
 
-.inline-editable:hover {
+.preview-document.is-edit-mode .inline-edit-target {
+  cursor: text;
+}
+
+.preview-document.is-edit-mode .inline-edit-target:hover {
   background: #eef8f6;
   outline-color: #b9d9d3;
 }
 
-.inline-editable:focus {
+.preview-document.is-edit-mode .inline-edit-target:focus {
+  outline-color: #92c9c0;
+}
+
+.inline-editable {
+  cursor: text;
+}
+
+.inline-editable:focus,
+.preview-document.is-edit-mode .inline-editable {
   background: #ffffff;
   outline: 2px solid #0f766e;
 }
