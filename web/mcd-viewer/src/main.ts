@@ -1713,7 +1713,7 @@ function nearestRowEdge(
 ): { insertIndex: number; x: number; y: number; distance: number } | undefined {
   const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr"));
   let nearest: { insertIndex: number; x: number; y: number; distance: number } | undefined;
-  for (let index = 1; index <= rows.length; index += 1) {
+  for (let index = 0; index <= rows.length; index += 1) {
     const row = rows[index] ?? rows[index - 1];
     const cells = Array.from(row?.children ?? []).slice(0, columnCount);
     for (const cell of cells) {
