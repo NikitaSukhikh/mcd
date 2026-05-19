@@ -40,7 +40,7 @@ cargo add mcd-render@0.1.0-alpha.0
 TypeScript/JavaScript projects can install:
 
 ```bash
-npm install @mcd/parser
+npm install @mcd-nix/parser
 ```
 
 Python projects can install the PyPI distribution `mcdee`, which exposes

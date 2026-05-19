@@ -1,5 +1,5 @@
 {
-  "name": "@mcd/parser",
+  "name": "@mcd-nix/parser",
   "version": "0.1.0",
   "type": "module",
   "description": "MCD (Markdown CSV Document) parser for TypeScript/JavaScript",

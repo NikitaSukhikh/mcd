@@ -9,7 +9,7 @@ async function fixtureBytes(name: string): Promise<Uint8Array> {
   return readFile(new URL(name, fixtureRoot));
 }
 
-describe("@mcd/parser", () => {
+describe("@mcd-nix/parser", () => {
   it("opens MCD packages from ArrayBuffer bytes", async () => {
     const bytes = await fixtureBytes("valid-minimal.mcd");
     const arrayBuffer = bytes.buffer.slice(

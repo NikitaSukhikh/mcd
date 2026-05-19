@@ -110,7 +110,7 @@ pandas (optional)
 
 ```json
 {
-  "name": "@mcd/parser",
+  "name": "@mcd-nix/parser",
   "type": "module",
   "devDependencies": {
     "typescript": "^5.0.0",

@@ -1,9 +1,9 @@
-# @mcd/parser
+# @mcd-nix/parser
 
 TypeScript/JavaScript bindings for Markdown CSV Document packages.
 
 ```ts
-import { openMcd } from "@mcd/parser";
+import { openMcd } from "@mcd-nix/parser";
 
 const doc = await openMcd(bytes);
 const validation = doc.validate();

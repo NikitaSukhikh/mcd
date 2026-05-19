@@ -51,6 +51,29 @@ jobs:
         with:
           packages-dir: bindings/python/dist
 
+  publish-typescript:
+    name: Publish TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bindings/typescript/package-lock.json
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+        working-directory: bindings/typescript
+      - run: npm test
+        working-directory: bindings/typescript
+      - run: npm run build
+        working-directory: bindings/typescript
+      - run: npm publish --access public
+        working-directory: bindings/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   cli-binaries:
     name: CLI binary
     runs-on: ${{ matrix.os }}

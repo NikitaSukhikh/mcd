@@ -39,6 +39,10 @@ cargo publish --manifest-path crates/mcd-cli/Cargo.toml
 
 ## Publish TypeScript
 
+Create an npm automation token and store it as the GitHub Actions repository
+secret `NPM_TOKEN`. The package is scoped as `@mcd-nix/parser`, so the npm
+account or organization must own the `@mcd-nix` scope.
+
 ```bash
 cd bindings/typescript
 npm ci
