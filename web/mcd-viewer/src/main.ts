@@ -1235,18 +1235,21 @@ function renderTablesEditor(): void {
         <div class="item-title">${escapeHtml(title)}</div>
         <span class="file-name">${escapeHtml(table.manifest.data)}</span>
       </div>
-      <div class="table-wrap"></div>
+      <div class="table-frame">
+        <div class="table-wrap"></div>
+      </div>
       <div class="table-actions">
         <button type="button" data-action="add-row">Add row</button>
       </div>
     `;
+    const tableFrame = card.querySelector<HTMLDivElement>(".table-frame");
     const tableWrap = card.querySelector<HTMLDivElement>(".table-wrap");
-    if (!tableWrap) {
+    if (!tableFrame || !tableWrap) {
       throw new Error("Missing table wrapper.");
     }
     const grid = renderTableGrid(table);
     tableWrap.appendChild(grid);
-    attachTableInsertControls(tableWrap, table, grid);
+    attachTableInsertControls(tableFrame, tableWrap, table, grid);
     card
       .querySelector<HTMLButtonElement>('[data-action="add-row"]')
       ?.addEventListener("click", () => {
@@ -1314,14 +1317,7 @@ function renderTableGrid(table: EditableTable): HTMLTableElement {
     remove.type = "button";
     remove.textContent = "Remove";
     remove.addEventListener("click", () => {
-      recordHistoryCheckpoint();
-      const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
-      table.rows.splice(rowIndex, 1);
-      if (shouldRenumberRowHeaders) {
-        renumberReservedRowHeaders(table);
-      }
-      renderTablesEditor();
-      markDirty();
+      deleteTableRow(table, rowIndex);
     });
     actionTd.appendChild(remove);
     tr.appendChild(actionTd);
@@ -1358,6 +1354,17 @@ function renderTableHeaderInput(table: EditableTable, column: TableColumn): HTML
   return input;
 }
 
+function deleteTableRow(table: EditableTable, rowIndex: number): void {
+  recordHistoryCheckpoint();
+  const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
+  table.rows.splice(rowIndex, 1);
+  if (shouldRenumberRowHeaders) {
+    renumberReservedRowHeaders(table);
+  }
+  renderTablesEditor();
+  markDirty();
+}
+
 function insertTableRow(table: EditableTable, insertIndex: number): void {
   recordHistoryCheckpoint();
   const shouldRenumberRowHeaders = usesDefaultReservedRowHeaders(table);
@@ -1386,6 +1393,25 @@ function insertTableColumn(table: EditableTable, insertIndex: number): void {
     row[column.name] = "";
   }
   insertColumnIntoTableViews(table, column, insertIndex);
+  renderTablesEditor();
+  markDirty();
+}
+
+function deleteTableColumn(table: EditableTable, columnName: string): void {
+  if (columnName === RESERVED_ROW_HEADER_COLUMN) {
+    return;
+  }
+  const columnIndex = table.schema.columns.findIndex((column) => column.name === columnName);
+  if (columnIndex < 0) {
+    return;
+  }
+
+  recordHistoryCheckpoint();
+  table.schema.columns.splice(columnIndex, 1);
+  for (const row of table.rows) {
+    delete row[columnName];
+  }
+  removeColumnFromTableViews(table, columnName);
   renderTablesEditor();
   markDirty();
 }
@@ -1426,14 +1452,31 @@ function insertColumnIntoTableViews(
   }
 }
 
+function removeColumnFromTableViews(table: EditableTable, columnName: string): void {
+  for (const view of Object.values(table.views)) {
+    if (view.columns) {
+      view.columns = view.columns.filter((column) => column.name !== columnName);
+    }
+    for (const key of ["x", "y", "series", "grouping", "markLabels"] as const) {
+      const encoding = view.chart?.[key];
+      if (encoding?.column === columnName && view.chart) {
+        delete view.chart[key];
+      }
+    }
+  }
+}
+
 function attachTableInsertControls(
+  tableFrame: HTMLDivElement,
   tableWrap: HTMLDivElement,
   table: EditableTable,
   grid: HTMLTableElement,
 ): void {
   const columnControl = renderTableInsertControl("column");
   const rowControl = renderTableInsertControl("row");
-  tableWrap.append(columnControl, rowControl);
+  const deleteColumnControl = renderTableDeleteControl("column");
+  const deleteRowControl = renderTableDeleteControl("row");
+  tableFrame.append(columnControl, rowControl, deleteColumnControl, deleteRowControl);
 
   columnControl.addEventListener("click", () => {
     const insertIndex = Number(columnControl.dataset.insertIndex);
@@ -1447,15 +1490,37 @@ function attachTableInsertControls(
       insertTableRow(table, insertIndex);
     }
   });
+  deleteColumnControl.addEventListener("click", () => {
+    const columnName = deleteColumnControl.dataset.columnName;
+    if (columnName) {
+      deleteTableColumn(table, columnName);
+    }
+  });
+  deleteRowControl.addEventListener("click", () => {
+    const rowIndex = Number(deleteRowControl.dataset.rowIndex);
+    if (Number.isInteger(rowIndex)) {
+      deleteTableRow(table, rowIndex);
+    }
+  });
 
   tableWrap.addEventListener("mousemove", (event) => {
-    syncTableInsertControls(event, tableWrap, grid, table, columnControl, rowControl);
+    syncTableEdgeControls(
+      event,
+      tableFrame,
+      tableWrap,
+      grid,
+      table,
+      columnControl,
+      rowControl,
+      deleteColumnControl,
+      deleteRowControl,
+    );
   });
-  tableWrap.addEventListener("mouseleave", () => {
-    hideTableInsertControls(columnControl, rowControl);
+  tableFrame.addEventListener("mouseleave", () => {
+    hideTableEdgeControls(columnControl, rowControl, deleteColumnControl, deleteRowControl);
   });
   tableWrap.addEventListener("scroll", () => {
-    hideTableInsertControls(columnControl, rowControl);
+    hideTableEdgeControls(columnControl, rowControl, deleteColumnControl, deleteRowControl);
   });
 }
 
@@ -1470,21 +1535,70 @@ function renderTableInsertControl(kind: "column" | "row"): HTMLButtonElement {
   return button;
 }
 
-function syncTableInsertControls(
+function renderTableDeleteControl(kind: "column" | "row"): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.className = `table-delete-control table-delete-${kind}`;
+  button.type = "button";
+  button.textContent = "-";
+  button.title = kind === "column" ? "Delete column" : "Delete row";
+  button.setAttribute("aria-hidden", "true");
+  button.tabIndex = -1;
+  return button;
+}
+
+function syncTableEdgeControls(
   event: MouseEvent,
+  tableFrame: HTMLDivElement,
   tableWrap: HTMLDivElement,
   grid: HTMLTableElement,
   table: EditableTable,
   columnControl: HTMLButtonElement,
   rowControl: HTMLButtonElement,
+  deleteColumnControl: HTMLButtonElement,
+  deleteRowControl: HTMLButtonElement,
 ): void {
-  if ((event.target as HTMLElement | null)?.closest(".table-insert-control")) {
+  if ((event.target as HTMLElement | null)?.closest(".table-insert-control, .table-delete-control")) {
     return;
   }
 
   const threshold = 8;
-  const wrapRect = tableWrap.getBoundingClientRect();
+  const frameRect = tableFrame.getBoundingClientRect();
   const tableRect = grid.getBoundingClientRect();
+  const columnDelete = nearestColumnDeleteEdge(event, grid, table, threshold);
+  const rowDelete = nearestRowDeleteEdge(event, grid, threshold);
+  const useColumnDelete =
+    columnDelete &&
+    (!rowDelete || columnDelete.distance <= rowDelete.distance) &&
+    event.clientY >= tableRect.top &&
+    event.clientY <= tableRect.bottom;
+  const useRowDelete =
+    rowDelete &&
+    !useColumnDelete &&
+    event.clientX >= tableRect.left &&
+    event.clientX <= tableRect.right;
+
+  if (useColumnDelete) {
+    showTableDeleteControl(deleteColumnControl, {
+      left: columnDelete.x - frameRect.left,
+      top: columnDelete.y - frameRect.top,
+      label: `Delete column ${columnDelete.label}`,
+      columnName: columnDelete.columnName,
+    });
+    hideTableEdgeControls(columnControl, rowControl, deleteRowControl);
+    return;
+  }
+
+  if (useRowDelete) {
+    showTableDeleteControl(deleteRowControl, {
+      left: rowDelete.x - frameRect.left,
+      top: rowDelete.y - frameRect.top,
+      label: `Delete row ${rowDelete.rowIndex + 1}`,
+      rowIndex: rowDelete.rowIndex,
+    });
+    hideTableEdgeControls(columnControl, rowControl, deleteColumnControl);
+    return;
+  }
+
   const columnBoundary = nearestColumnEdge(event, grid, table.schema.columns.length, threshold);
   const rowBoundary = nearestRowEdge(event, grid, table.schema.columns.length, threshold);
   const useColumn =
@@ -1501,26 +1615,26 @@ function syncTableInsertControls(
   if (useColumn) {
     showTableInsertControl(columnControl, {
       insertIndex: columnBoundary.insertIndex,
-      left: columnBoundary.x - wrapRect.left + tableWrap.scrollLeft,
-      top: columnBoundary.y - wrapRect.top + tableWrap.scrollTop,
+      left: columnBoundary.x - frameRect.left,
+      top: columnBoundary.y - frameRect.top,
       label: `Insert column before column ${columnBoundary.insertIndex + 1}`,
     });
-    hideTableInsertControls(rowControl);
+    hideTableEdgeControls(rowControl, deleteColumnControl, deleteRowControl);
     return;
   }
 
   if (useRow) {
     showTableInsertControl(rowControl, {
       insertIndex: rowBoundary.insertIndex,
-      left: rowBoundary.x - wrapRect.left + tableWrap.scrollLeft,
-      top: rowBoundary.y - wrapRect.top + tableWrap.scrollTop,
+      left: rowBoundary.x - frameRect.left,
+      top: rowBoundary.y - frameRect.top,
       label: `Insert row before row ${rowBoundary.insertIndex + 1}`,
     });
-    hideTableInsertControls(columnControl);
+    hideTableEdgeControls(columnControl, deleteColumnControl, deleteRowControl);
     return;
   }
 
-  hideTableInsertControls(columnControl, rowControl);
+  hideTableEdgeControls(columnControl, rowControl, deleteColumnControl, deleteRowControl);
 }
 
 function nearestColumnEdge(
@@ -1557,6 +1671,40 @@ function nearestColumnEdge(
   return nearest;
 }
 
+function nearestColumnDeleteEdge(
+  event: MouseEvent,
+  grid: HTMLTableElement,
+  table: EditableTable,
+  threshold: number,
+):
+  | { columnName: string; label: string; x: number; y: number; distance: number }
+  | undefined {
+  const headers = Array.from(grid.querySelectorAll<HTMLTableCellElement>("thead th"));
+  let nearest:
+    | { columnName: string; label: string; x: number; y: number; distance: number }
+    | undefined;
+  table.schema.columns.forEach((column, index) => {
+    if (column.name === RESERVED_ROW_HEADER_COLUMN) {
+      return;
+    }
+    const rect = headers[index]?.getBoundingClientRect();
+    if (!rect || event.clientX < rect.left || event.clientX > rect.right) {
+      return;
+    }
+    const distance = Math.abs(event.clientY - rect.top);
+    if (distance <= threshold && (!nearest || distance < nearest.distance)) {
+      nearest = {
+        columnName: column.name,
+        label: column.label ?? column.name,
+        x: rect.left + rect.width / 2,
+        y: rect.top,
+        distance,
+      };
+    }
+  });
+  return nearest;
+}
+
 function nearestRowEdge(
   event: MouseEvent,
   grid: HTMLTableElement,
@@ -1588,6 +1736,31 @@ function nearestRowEdge(
   return nearest;
 }
 
+function nearestRowDeleteEdge(
+  event: MouseEvent,
+  grid: HTMLTableElement,
+  threshold: number,
+): { rowIndex: number; x: number; y: number; distance: number } | undefined {
+  const rows = Array.from(grid.querySelectorAll<HTMLTableRowElement>("tbody tr"));
+  let nearest: { rowIndex: number; x: number; y: number; distance: number } | undefined;
+  rows.forEach((row, rowIndex) => {
+    const rect = row.children[0]?.getBoundingClientRect();
+    if (!rect || event.clientY < rect.top || event.clientY > rect.bottom) {
+      return;
+    }
+    const distance = Math.abs(event.clientX - rect.left);
+    if (distance <= threshold && (!nearest || distance < nearest.distance)) {
+      nearest = {
+        rowIndex,
+        x: rect.left,
+        y: rect.top + rect.height / 2,
+        distance,
+      };
+    }
+  });
+  return nearest;
+}
+
 function showTableInsertControl(
   control: HTMLButtonElement,
   options: { insertIndex: number; left: number; top: number; label: string },
@@ -1599,10 +1772,38 @@ function showTableInsertControl(
   control.classList.add("is-visible");
 }
 
-function hideTableInsertControls(...controls: HTMLButtonElement[]): void {
+function showTableDeleteControl(
+  control: HTMLButtonElement,
+  options: {
+    left: number;
+    top: number;
+    label: string;
+    columnName?: string;
+    rowIndex?: number;
+  },
+): void {
+  control.style.left = `${options.left}px`;
+  control.style.top = `${options.top}px`;
+  control.setAttribute("aria-label", options.label);
+  if (options.columnName) {
+    control.dataset.columnName = options.columnName;
+  } else {
+    delete control.dataset.columnName;
+  }
+  if (typeof options.rowIndex === "number") {
+    control.dataset.rowIndex = String(options.rowIndex);
+  } else {
+    delete control.dataset.rowIndex;
+  }
+  control.classList.add("is-visible");
+}
+
+function hideTableEdgeControls(...controls: HTMLButtonElement[]): void {
   for (const control of controls) {
     control.classList.remove("is-visible");
     delete control.dataset.insertIndex;
+    delete control.dataset.columnName;
+    delete control.dataset.rowIndex;
   }
 }
 
