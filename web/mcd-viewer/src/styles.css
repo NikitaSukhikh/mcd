@@ -60,7 +60,7 @@ button:disabled {
 }
 
 .brand {
-  align-items: center;
+  align-items: flex-end;
   display: flex;
   gap: 10px;
   min-width: 0;
@@ -121,13 +121,33 @@ button:disabled {
 .drop-zone {
   border: 1px dashed #9aa8b2;
   border-radius: 8px;
+  cursor: pointer;
   margin: 16px;
   padding: 16px;
+}
+
+.drop-zone:hover,
+.drop-zone:focus-visible {
+  background: #f7fbfa;
+  border-color: #0f766e;
+  outline: none;
 }
 
 .drop-zone.is-active {
   background: #e8f4f1;
   border-color: #0f766e;
+}
+
+.preview-document.is-empty {
+  align-content: center;
+  justify-content: center;
+  width: min(100%, 420px);
+}
+
+.preview-document.is-empty .drop-zone {
+  margin: 0;
+  text-align: center;
+  width: min(100%, 360px);
 }
 
 .drop-title {

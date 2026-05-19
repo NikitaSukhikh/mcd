@@ -265,7 +265,7 @@ app.innerHTML = `
         <img class="brand-logo" src="/MCD_logo_tight.png" alt="MCD" />
         <div>
           <div class="brand-title">MCD Viewer</div>
-          <div class="file-name" id="fileName">No document loaded</div>
+          <div class="file-name" id="fileName"></div>
         </div>
       </div>
       <div class="toolbar">
@@ -303,7 +303,7 @@ app.innerHTML = `
         </section>
       </section>
       <section class="preview-pane">
-        <article class="preview-document" id="preview">
+        <article class="preview-document is-empty" id="preview">
           ${emptyDropZoneHtml()}
         </article>
       </section>
@@ -350,6 +350,7 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 preview.addEventListener("dragover", (event: DragEvent) => {
+  if (state) return;
   const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
   if (!dropZone) return;
   event.preventDefault();
@@ -357,6 +358,7 @@ preview.addEventListener("dragover", (event: DragEvent) => {
 });
 
 preview.addEventListener("dragleave", (event: DragEvent) => {
+  if (state) return;
   const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
   if (!dropZone) return;
   if (!preview.contains(event.relatedTarget as Node)) {
@@ -365,6 +367,7 @@ preview.addEventListener("dragleave", (event: DragEvent) => {
 });
 
 preview.addEventListener("drop", (event: DragEvent) => {
+  if (state) return;
   const dropZone = preview.querySelector<HTMLDivElement>("#dropZone");
   if (!dropZone) return;
   event.preventDefault();
@@ -377,7 +380,7 @@ preview.addEventListener("drop", (event: DragEvent) => {
 
 preview.addEventListener("click", (event) => {
   const dropZone = (event.target as Element | null)?.closest<HTMLDivElement>("#dropZone");
-  if (dropZone && preview.contains(dropZone)) {
+  if (!state && dropZone && preview.contains(dropZone)) {
     fileInput.click();
     return;
   }
@@ -403,6 +406,7 @@ preview.addEventListener("click", (event) => {
 });
 
 preview.addEventListener("keydown", (event: KeyboardEvent) => {
+  if (state) return;
   const dropZone = (event.target as Element | null)?.closest<HTMLDivElement>("#dropZone");
   if (!dropZone || !preview.contains(dropZone)) {
     return;
@@ -773,7 +777,7 @@ function hydrateUiFromState(): void {
   const hasState = Boolean(state);
   fileNameEl.textContent = state
     ? `${state.fileName}${state.dirty ? " (edited)" : ""}`
-    : "No document loaded";
+    : "";
   markdownEditor.disabled = !hasState;
   validateButton.disabled = !hasState;
   saveButton.disabled = !hasState;
@@ -781,6 +785,7 @@ function hydrateUiFromState(): void {
   markdownEditor.value = state?.markdown ?? "";
   renderTablesEditor();
   renderAnnotationsEditor();
+  preview.classList.toggle("is-empty", !hasState);
   if (!state) {
     setStatus("Open a document to edit Markdown, annotations, and CSV-backed tables.");
     preview.innerHTML = emptyDropZoneHtml();
