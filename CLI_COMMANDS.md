@@ -1,6 +1,7 @@
 # MCD CLI Commands
 
 This file lists the available `mcd` command line commands and their options.
+For a step-by-step guide to creating an unpacked package and packing it into a `.mcd` file, see [MCD_CREATION_GUIDE.md](MCD_CREATION_GUIDE.md).
 
 Run from this repository with:
 

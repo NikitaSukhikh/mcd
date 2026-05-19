@@ -205,7 +205,7 @@ fn render_block(block: &DocumentBlock, context: &RenderContext<'_>) -> mcd_core:
             let items = text
                 .lines()
                 .filter(|line| !line.trim().is_empty())
-                .map(|line| format!("<li>{}</li>", escape_html(line.trim())))
+                .map(|line| format!("<li>{}</li>", render_inline_markdown(line.trim())))
                 .collect::<String>()
                 + &render_block_annotation_markers(refs, context.annotations);
             Ok(format!("<ul{}>{items}</ul>", source_attrs(id, *source)))
@@ -237,7 +237,7 @@ fn render_block(block: &DocumentBlock, context: &RenderContext<'_>) -> mcd_core:
             "<blockquote{}>{}</blockquote>",
             source_attrs(id, *source),
             text.lines()
-                .map(|line| format!("<p>{}</p>", escape_html(line.trim())))
+                .map(|line| format!("<p>{}</p>", render_inline_markdown(line.trim())))
                 .collect::<String>()
                 + &render_block_annotation_markers(refs, context.annotations)
         )),
@@ -362,7 +362,7 @@ fn render_table(
     if let Some(caption) = &placement.caption {
         html.push_str(&format!(
             "<figcaption>{}</figcaption>",
-            escape_html(caption)
+            render_inline_markdown(caption)
         ));
     }
     html.push_str("<table><thead><tr>");
@@ -463,7 +463,7 @@ fn render_image(
     if let Some(caption) = caption {
         html.push_str(&format!(
             "<figcaption>{}</figcaption>",
-            escape_html(caption)
+            render_inline_markdown(caption)
         ));
     }
     html.push_str("</figure>");
@@ -506,7 +506,7 @@ fn render_chart(
     if let Some(caption) = &placement.caption {
         html.push_str(&format!(
             "<figcaption>{}</figcaption>",
-            escape_html(caption)
+            render_inline_markdown(caption)
         ));
     }
     html.push_str(&svg);
@@ -948,11 +948,11 @@ fn render_annotated_text(
         if offset > text.len() || offset < cursor {
             continue;
         }
-        html.push_str(&escape_html(&text[cursor..offset]));
+        html.push_str(&render_inline_markdown(&text[cursor..offset]));
         html.push_str(&render_annotation_marker(&annotation_ref.id, annotations));
         cursor = offset;
     }
-    html.push_str(&escape_html(&text[cursor..]));
+    html.push_str(&render_inline_markdown(&text[cursor..]));
 
     let block_refs = refs
         .iter()
@@ -961,6 +961,152 @@ fn render_annotated_text(
         .collect::<Vec<_>>();
     html.push_str(&render_block_annotation_markers(&block_refs, annotations));
     html
+}
+
+fn render_inline_markdown(text: &str) -> String {
+    let mut html = String::new();
+    let mut cursor = 0;
+
+    while let Some(open_rel) = text[cursor..].find('[') {
+        let open = cursor + open_rel;
+        let Some(close) = find_link_label_end(text, open + 1) else {
+            break;
+        };
+        if !text[close..].starts_with("](") {
+            html.push_str(&escape_html(&text[cursor..=open]));
+            cursor = open + 1;
+            continue;
+        }
+        let Some(end) = find_unescaped_byte(text, close + 2, b')') else {
+            break;
+        };
+
+        let label = &text[open + 1..close];
+        let target = &text[close + 2..end];
+        let Some(link) = parse_link_target(target) else {
+            html.push_str(&escape_html(&text[cursor..=open]));
+            cursor = open + 1;
+            continue;
+        };
+        if !is_safe_href(link.href) {
+            html.push_str(&escape_html(&text[cursor..=end]));
+            cursor = end + 1;
+            continue;
+        }
+
+        html.push_str(&escape_html(&text[cursor..open]));
+        html.push_str(&format!(
+            "<a href=\"{}\"{}>{}</a>",
+            escape_attr(link.href),
+            link.title
+                .map(|title| format!(" title=\"{}\"", escape_attr(title)))
+                .unwrap_or_default(),
+            render_inline_markdown(label)
+        ));
+        cursor = end + 1;
+    }
+
+    html.push_str(&escape_html(&text[cursor..]));
+    html
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ParsedLinkTarget<'a> {
+    href: &'a str,
+    title: Option<&'a str>,
+}
+
+fn parse_link_target(target: &str) -> Option<ParsedLinkTarget<'_>> {
+    let target = target.trim();
+    if target.is_empty() {
+        return None;
+    }
+
+    let (href, rest) = if let Some(stripped) = target.strip_prefix('<') {
+        let end = stripped.find('>')?;
+        (&stripped[..end], stripped[end + 1..].trim())
+    } else {
+        match target.find(char::is_whitespace) {
+            Some(index) => (&target[..index], target[index..].trim()),
+            None => (target, ""),
+        }
+    };
+
+    let title = if rest.len() >= 2 && rest.starts_with('"') && rest.ends_with('"') {
+        Some(&rest[1..rest.len() - 1])
+    } else if rest.is_empty() {
+        None
+    } else {
+        return None;
+    };
+
+    Some(ParsedLinkTarget { href, title })
+}
+
+fn find_unescaped_byte(text: &str, start: usize, needle: u8) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = start;
+    while index < bytes.len() {
+        if bytes[index] == needle && !is_escaped(bytes, index) {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn find_link_label_end(text: &str, start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = start;
+    let mut nested_brackets = 0usize;
+    while index < bytes.len() {
+        if !is_escaped(bytes, index) {
+            match bytes[index] {
+                b'[' => nested_brackets += 1,
+                b']' if nested_brackets == 0 => return Some(index),
+                b']' => nested_brackets -= 1,
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn is_escaped(bytes: &[u8], index: usize) -> bool {
+    let mut slash_count = 0;
+    let mut cursor = index;
+    while cursor > 0 && bytes[cursor - 1] == b'\\' {
+        slash_count += 1;
+        cursor -= 1;
+    }
+    slash_count % 2 == 1
+}
+
+fn is_safe_href(href: &str) -> bool {
+    let href = href.trim();
+    if href.is_empty() || href.chars().any(char::is_control) {
+        return false;
+    }
+
+    let lower = href.to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with('#')
+        || lower.starts_with('/')
+        || lower.starts_with("./")
+        || lower.starts_with("../")
+    {
+        return true;
+    }
+
+    match href.find(':') {
+        Some(colon) => href[..colon]
+            .chars()
+            .any(|ch| matches!(ch, '/' | '?' | '#')),
+        None => true,
+    }
 }
 
 fn render_block_annotation_markers(
@@ -1154,6 +1300,14 @@ page-break-inside: avoid;
 [data-mcd-source-id] {
 scroll-margin-top: 24px;
 }
+.mcd-document a {
+color: var(--mcd-color-accent);
+text-decoration: none;
+}
+.mcd-document a:hover,
+.mcd-document a:focus {
+text-decoration: underline;
+}
 figure {
 margin: 24px 0;
 }
@@ -1211,14 +1365,14 @@ fill: var(--mcd-color-muted);
 font-size: 13px;
 }
 .mcd-annotation-marker {
-opacity: 0.5;
+opacity: 1;
 font-size: 0.72em;
 line-height: 0;
 margin-left: 0.12em;
 vertical-align: super;
 }
 .mcd-annotation-marker a {
-color: inherit;
+color: var(--mcd-color-accent);
 text-decoration: none;
 }
 .mcd-annotations {
@@ -1509,6 +1663,32 @@ mod tests {
         assert!(html.contains("<math"));
         assert!(html.contains("<mfrac>"));
         assert!(!html.contains("class=\"mcd-math mcd-math-fallback\""));
+    }
+
+    #[test]
+    fn renders_markdown_links_as_clickable_anchors() {
+        let package = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", mcd_core::package::MCD_MIMETYPE),
+            (
+                "manifest.json",
+                r#"{"format":"MCD","version":"0.1","profile":"MCD-Core","entrypoint":"content/main.md"}"#,
+            ),
+            (
+                "content/main.md",
+                "# Links\n\nRead [the guide](https://example.com/guide \"Guide\"), [[1]](#cite-note-1), and [skip](javascript:alert(1)).\n\n- [Reference 1](#ref-1)\n",
+            ),
+        ]))
+        .expect("package opens");
+
+        let html = render_html(&package).expect("html renders");
+
+        assert!(
+            html.contains("<a href=\"https://example.com/guide\" title=\"Guide\">the guide</a>")
+        );
+        assert!(html.contains("<a href=\"#cite-note-1\">[1]</a>"));
+        assert!(html.contains("<a href=\"#ref-1\">Reference 1</a>"));
+        assert!(!html.contains("href=\"javascript:alert(1)\""));
+        assert!(html.contains("[skip](javascript:alert(1))"));
     }
 
     #[test]

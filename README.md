@@ -27,6 +27,7 @@ mcd <command>
 The examples below use the installed `mcd` command. If you have not installed it, replace `mcd` with `cargo run -p mcd-cli --`.
 
 A dedicated command list is available in [CLI_COMMANDS.md](CLI_COMMANDS.md).
+For agent-oriented instructions on creating a package from scratch, see [MCD_CREATION_GUIDE.md](MCD_CREATION_GUIDE.md).
 
 ## Language Bindings
 

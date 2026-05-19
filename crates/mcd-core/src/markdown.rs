@@ -342,6 +342,22 @@ fn collect_plain_text<'arena>(node: &'arena AstNode<'arena>) -> String {
 fn collect_plain_text_inner<'arena>(node: &'arena AstNode<'arena>, text: &mut String) {
     match &node.data().value {
         NodeValue::Text(value) => text.push_str(value),
+        NodeValue::Link(link) => {
+            let mut label = String::new();
+            for child in node.children() {
+                collect_plain_text_inner(child, &mut label);
+            }
+            text.push('[');
+            text.push_str(&label);
+            text.push_str("](");
+            text.push_str(&link.url);
+            if !link.title.is_empty() {
+                text.push_str(" \"");
+                text.push_str(&link.title);
+                text.push('"');
+            }
+            text.push(')');
+        }
         NodeValue::Code(NodeCode { literal, .. }) => text.push_str(literal),
         NodeValue::HtmlInline(value) => text.push_str(value),
         NodeValue::Math(NodeMath { literal, .. }) => text.push_str(literal),
@@ -471,6 +487,25 @@ mod tests {
                 assert_eq!(text, "Revenue increased.");
                 assert_eq!(annotations[0].id, "review-revenue");
                 assert_eq!(annotations[0].text_offset, Some("Revenue".len()));
+            }
+            other => panic!("expected paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preserves_markdown_link_targets_in_text() {
+        let doc = parse_markdown(
+            "content/main.md",
+            r#"Read [the guide](https://example.com/guide "Guide") now."#,
+        )
+        .expect("markdown parses");
+
+        match &doc.blocks[0] {
+            DocumentBlock::Paragraph { text, .. } => {
+                assert_eq!(
+                    text,
+                    r#"Read [the guide](https://example.com/guide "Guide") now."#
+                );
             }
             other => panic!("expected paragraph, got {other:?}"),
         }
