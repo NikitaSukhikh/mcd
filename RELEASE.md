@@ -119,3 +119,15 @@ git push origin v0.1.0-alpha.0
 
 The tag workflow uploads Windows, macOS, and Linux CLI binaries to the GitHub
 Release.
+
+CLI archives are built for:
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `mcd-cli-linux-x64.tar.gz` |
+| Linux arm64 | `mcd-cli-linux-arm64.tar.gz` |
+| macOS x64 | `mcd-cli-macos-x64.tar.gz` |
+| macOS arm64 | `mcd-cli-macos-arm64.tar.gz` |
+| Windows x64 | `mcd-cli-windows-x64.zip` |
+
+Each archive is uploaded with a matching `.sha256` checksum file.

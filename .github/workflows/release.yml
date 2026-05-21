@@ -125,7 +125,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   cli-binaries:
-    name: CLI binary
+    name: CLI binary (${{ matrix.artifact }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -133,24 +133,64 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: linux-x64
+            target: x86_64-unknown-linux-gnu
             archive: mcd-cli-linux-x64.tar.gz
+            cross: false
+          - os: ubuntu-latest
+            artifact: linux-arm64
+            target: aarch64-unknown-linux-gnu
+            archive: mcd-cli-linux-arm64.tar.gz
+            cross: true
+          - os: macos-13
+            artifact: macos-x64
+            target: x86_64-apple-darwin
+            archive: mcd-cli-macos-x64.tar.gz
+            cross: false
           - os: macos-latest
             artifact: macos-arm64
+            target: aarch64-apple-darwin
             archive: mcd-cli-macos-arm64.tar.gz
+            cross: false
           - os: windows-latest
             artifact: windows-x64
+            target: x86_64-pc-windows-msvc
             archive: mcd-cli-windows-x64.zip
+            cross: false
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p mcd-cli
+        with:
+          targets: ${{ matrix.target }}
+      - name: Set up QEMU
+        if: matrix.cross
+        uses: docker/setup-qemu-action@v3
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build CLI
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release -p mcd-cli --target "${{ matrix.target }}"
+          else
+            cargo build --release -p mcd-cli --target "${{ matrix.target }}"
+          fi
       - name: Archive Unix binary
         if: matrix.os != 'windows-latest'
-        run: tar -czf ${{ matrix.archive }} -C target/release mcd
+        run: tar -czf ${{ matrix.archive }} -C target/${{ matrix.target }}/release mcd
       - name: Archive Windows binary
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: Compress-Archive -Path target/release/mcd.exe -DestinationPath ${{ matrix.archive }}
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/mcd.exe -DestinationPath ${{ matrix.archive }}
+      - name: Write checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path "${{ matrix.archive }}").Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.archive }}" | Set-Content -NoNewline -Encoding ascii "${{ matrix.archive }}.sha256"
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.archive }}
+          files: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256

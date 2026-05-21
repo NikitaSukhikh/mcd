@@ -12,6 +12,25 @@ binary.
 cargo install mcd-cli --version 0.1.0-alpha.0
 ```
 
+If you do not want to compile locally, download a prebuilt CLI archive from the
+GitHub Release:
+
+```text
+https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.0
+```
+
+Prebuilt CLI archives are published for:
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `mcd-cli-linux-x64.tar.gz` |
+| Linux arm64 | `mcd-cli-linux-arm64.tar.gz` |
+| macOS x64 | `mcd-cli-macos-x64.tar.gz` |
+| macOS arm64 | `mcd-cli-macos-arm64.tar.gz` |
+| Windows x64 | `mcd-cli-windows-x64.zip` |
+
+Each archive is published with a matching `.sha256` checksum file.
+
 Verify:
 
 ```bash
@@ -164,6 +183,26 @@ $mcd = new Client('/path/to/mcd');
 | Python | `mcdee` | Import as `mcd`. |
 | npm | `@mcd-nix/parser` | Includes embedded WebAssembly. |
 | Composer | `mcd-nix/parser` | PHP wrapper; requires the `mcd` CLI or prebuilt binary. |
+
+## No Compiler Required
+
+These install paths use prebuilt artifacts on supported platforms:
+
+| Tooling | Command or artifact | Local compiler needed |
+| --- | --- | --- |
+| CLI | GitHub Release archive for your OS/CPU | No |
+| Python | `pip install mcdee` | No, when a matching wheel exists |
+| Python | `pip install --only-binary=:all: mcdee` | No; fails if no wheel exists |
+| TypeScript/JavaScript | `npm install @mcd-nix/parser` | No |
+| PHP | `composer require mcd-nix/parser` plus prebuilt `mcd` CLI archive | No |
+
+These install paths may compile locally:
+
+| Tooling | Command | Local compiler needed |
+| --- | --- | --- |
+| CLI | `cargo install mcd-cli` | Rust toolchain and native linker |
+| Rust libraries | `cargo add mcd-core` / `cargo add mcd-render` | Rust toolchain and native linker |
+| Python fallback | `pip install mcdee` without a matching wheel | Rust, Maturin, and native build tools |
 
 ## Troubleshooting
 
