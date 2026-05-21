@@ -57,6 +57,16 @@ The PyPI distribution is `mcdee`; the Python import package is `mcd`.
 pip install mcdee
 ```
 
+Published releases include prebuilt wheels for common Windows, macOS, and Linux
+machines. On those platforms, pip downloads a wheel and does not need Rust,
+Maturin, Visual Studio Build Tools, or a local C compiler.
+
+To require a prebuilt wheel and fail instead of compiling from source:
+
+```bash
+pip install --only-binary=:all: mcdee
+```
+
 Example:
 
 ```python
@@ -159,6 +169,10 @@ $mcd = new Client('/path/to/mcd');
 
 - If `cargo install mcd-cli` fails on Windows with a missing `kernel32.lib`,
   install or repair the Windows SDK / Visual Studio C++ build tools.
+- If `pip install mcdee` tries to build from source on Windows and fails with a
+  missing `kernel32.lib`, either install from a prebuilt wheel with
+  `pip install --only-binary=:all: mcdee` or run pip from the
+  "x64 Native Tools Command Prompt for VS 2022".
 - If PHP cannot find `mcd`, run `mcd --help` in the same shell and either fix
   `PATH` or pass the binary path to `new Mcd\Client(...)`.
 - If TypeScript bundling fails, make sure your runtime supports ES modules.

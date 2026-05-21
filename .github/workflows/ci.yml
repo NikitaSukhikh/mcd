@@ -50,7 +50,7 @@ jobs:
       - run: python -m pip install --upgrade pip maturin pytest pandas
       - run: python -m pytest
         working-directory: bindings/python
-      - run: maturin build --sdist --out dist
+      - run: maturin build --sdist --out dist --compatibility pypi
         working-directory: bindings/python
 
   php:

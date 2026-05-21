@@ -12,7 +12,7 @@ npm test --prefix bindings/typescript
 npm run build --prefix bindings/typescript
 cd bindings/python
 python -m pytest
-python -m maturin build --sdist --out dist
+python -m maturin build --sdist --out dist --compatibility pypi
 cd ../..
 ```
 
@@ -55,6 +55,9 @@ npm publish --access public
 ## Publish Python
 
 The PyPI distribution is `mcdee`; the import package remains `mcd`.
+Python wheels are built with PyO3's stable ABI for CPython 3.9 and newer, so a
+single wheel per operating system/architecture can serve Python 3.9 through
+newer CPython releases.
 
 PyPI Trusted Publisher settings:
 
@@ -69,7 +72,24 @@ PyPI Trusted Publisher settings:
 ```bash
 cd bindings/python
 python -m pip install --upgrade maturin
-python -m maturin publish
+python -m maturin build --sdist --out dist --compatibility pypi
+python -m maturin upload dist/*
+```
+
+The release workflow builds and publishes:
+
+| Platform | Wheel coverage |
+| --- | --- |
+| Linux x64 | `cp39-abi3-manylinux2014_x86_64` |
+| Linux arm64 | `cp39-abi3-manylinux2014_aarch64` |
+| macOS universal2 | `cp39-abi3-macosx_*_universal2` |
+| Windows x64 | `cp39-abi3-win_amd64` |
+
+After publishing, verify that a supported machine can install without source
+build tools:
+
+```bash
+python -m pip install --only-binary=:all: mcdee
 ```
 
 ## Publish PHP
