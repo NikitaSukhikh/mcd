@@ -81,6 +81,32 @@ def test_agent_context_options() -> None:
     assert context["charts"][0]["tableId"] == "revenue"
 
 
+def test_sql_query_api() -> None:
+    doc = mcd.open(example("revenue-report"))
+
+    result = doc.query(
+        "select count(*) as rows, max(revenue_gbp) as max_revenue from revenue"
+    )
+
+    assert result.columns == ["rows", "max_revenue"]
+    assert result.row_count == 1
+    assert len(result) == 1
+    assert result.rows == [{"rows": 4, "max_revenue": 158250.0}]
+    assert result.as_dict()["rowCount"] == 1
+    assert "max_revenue" in result.to_json()
+    assert result.to_csv() == "rows,max_revenue\n4,158250\n"
+    assert "max_revenue" in result.to_table()
+
+    top_level = mcd.query(
+        example("revenue-report"),
+        "select quarter from revenue order by revenue_gbp desc limit 1",
+    )
+    assert top_level.rows == [{"quarter": "Q4"}]
+
+    with pytest.raises(ValueError, match="query must be a SELECT statement"):
+        doc.query("delete from revenue")
+
+
 def test_annotation_metadata_access(tmp_path: Path) -> None:
     package = tmp_path / "annotated.mcd"
     with zipfile.ZipFile(package, "w") as archive:

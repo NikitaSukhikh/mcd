@@ -7,6 +7,7 @@ from ._native import (
     Diagnostic,
     Document,
     Image,
+    QueryResult,
     Table,
     TableSchema,
     TableView,
@@ -14,6 +15,7 @@ from ._native import (
     convert_pdf,
     open,
     pdf_to_mcd_bytes,
+    query,
 )
 
 __all__ = [
@@ -23,6 +25,7 @@ __all__ = [
     "Diagnostic",
     "Document",
     "Image",
+    "QueryResult",
     "Table",
     "TableSchema",
     "TableView",
@@ -30,4 +33,5 @@ __all__ = [
     "convert_pdf",
     "open",
     "pdf_to_mcd_bytes",
+    "query",
 ]

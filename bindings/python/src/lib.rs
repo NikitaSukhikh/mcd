@@ -18,6 +18,9 @@ use mcd_core::{
     tables::{DataTable, TableRow, TypedValue},
     validate,
 };
+use mcd_query::{
+    QueryResult as CoreQueryResult, QueryValue as CoreQueryValue, query_package, query_path,
+};
 use pyo3::{
     IntoPyObjectExt,
     exceptions::{PyKeyError, PyRuntimeError, PyValueError},
@@ -152,6 +155,12 @@ impl PyDocument {
             object.remove("tables");
         }
         json_to_py(py, &value)
+    }
+
+    fn query(&self, sql: &str) -> PyResult<PyQueryResult> {
+        Ok(PyQueryResult {
+            result: query_package(&self.package, sql).map_err(query_err_to_py)?,
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -548,6 +557,62 @@ impl PyAnnotation {
     }
 }
 
+#[pyclass(name = "QueryResult", module = "mcd")]
+#[derive(Clone)]
+struct PyQueryResult {
+    result: CoreQueryResult,
+}
+
+#[pymethods]
+impl PyQueryResult {
+    #[getter]
+    fn columns(&self) -> Vec<String> {
+        self.result.columns.clone()
+    }
+
+    #[getter]
+    fn row_count(&self) -> usize {
+        self.result.row_count()
+    }
+
+    #[getter]
+    fn rows(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(py, &self.result.rows_as_json())
+    }
+
+    fn values(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(py, &query_values_json(&self.result))
+    }
+
+    fn as_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(py, &self.result.as_json())
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        self.result.to_json_pretty().map_err(query_err_to_py)
+    }
+
+    fn to_csv(&self) -> String {
+        self.result.to_csv()
+    }
+
+    fn to_table(&self) -> String {
+        self.result.to_table()
+    }
+
+    fn __len__(&self) -> usize {
+        self.result.row_count()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "QueryResult(columns={}, rows={})",
+            self.result.columns.len(),
+            self.result.row_count()
+        )
+    }
+}
+
 #[pyclass(name = "ValidationResult", module = "mcd")]
 #[derive(Clone)]
 struct PyValidationResult {
@@ -717,11 +782,19 @@ fn pdf_to_mcd_bytes<'py>(
     Ok(PyBytes::new(py, &bytes))
 }
 
+#[pyfunction(name = "query")]
+fn query_file(path: PathBuf, sql: &str) -> PyResult<PyQueryResult> {
+    Ok(PyQueryResult {
+        result: query_path(path, sql).map_err(query_err_to_py)?,
+    })
+}
+
 #[pymodule]
 fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(open_package, module)?)?;
     module.add_function(wrap_pyfunction!(convert_pdf, module)?)?;
     module.add_function(wrap_pyfunction!(pdf_to_mcd_bytes, module)?)?;
+    module.add_function(wrap_pyfunction!(query_file, module)?)?;
     module.add_class::<PyDocument>()?;
     module.add_class::<PyBlock>()?;
     module.add_class::<PyTable>()?;
@@ -730,6 +803,7 @@ fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyChart>()?;
     module.add_class::<PyImage>()?;
     module.add_class::<PyAnnotation>()?;
+    module.add_class::<PyQueryResult>()?;
     module.add_class::<PyValidationResult>()?;
     module.add_class::<PyDiagnostic>()?;
     Ok(())
@@ -745,6 +819,10 @@ fn err_to_py(err: McdError) -> PyErr {
 
 fn json_err_to_py(err: serde_json::Error) -> PyErr {
     PyRuntimeError::new_err(err.to_string())
+}
+
+fn query_err_to_py(err: anyhow::Error) -> PyErr {
+    PyValueError::new_err(err.to_string())
 }
 
 fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
@@ -778,6 +856,20 @@ fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
             dict.into_py_any(py)
         }
     }
+}
+
+fn query_values_json(result: &CoreQueryResult) -> Value {
+    Value::Array(
+        result
+            .rows
+            .iter()
+            .map(|row| Value::Array(row.iter().map(query_value_to_json).collect::<Vec<_>>()))
+            .collect(),
+    )
+}
+
+fn query_value_to_json(value: &CoreQueryValue) -> Value {
+    serde_json::to_value(value).unwrap_or(Value::Null)
 }
 
 fn dataframe_from_rows(py: Python<'_>, rows: &[TableRow]) -> PyResult<PyObject> {

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/mcd-core",
+    "crates/mcd-query",
     "crates/mcd-render",
     "crates/mcd-cli",
     "crates/mcd-wasm",
