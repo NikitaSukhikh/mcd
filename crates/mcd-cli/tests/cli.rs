@@ -273,6 +273,32 @@ fn query_runs_read_only_sql_against_package_tables() {
 }
 
 #[test]
+fn tools_lists_python_sql_and_optional_package_schema() {
+    let generic = run(mcd().arg("tools"));
+    assert!(generic.status.success(), "{}", stderr(&generic));
+    assert!(stdout(&generic).contains("Python top-level commands:"));
+    assert!(stdout(&generic).contains("mcd.query(path, sql) -> QueryResult"));
+    assert!(stdout(&generic).contains("SQL CLI examples:"));
+
+    let revenue = example_package("revenue-report");
+    let text = run(mcd().arg("tools").arg(&revenue));
+    assert!(text.status.success(), "{}", stderr(&text));
+    assert!(stdout(&text).contains("Package tables:"));
+    assert!(stdout(&text).contains("- revenue (tables/revenue.csv)"));
+    assert!(stdout(&text).contains("revenue_gbp: decimal"));
+
+    let json_output = run(mcd().arg("tools").arg(&revenue).arg("--format").arg("json"));
+    assert!(json_output.status.success(), "{}", stderr(&json_output));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&json_output)).expect("tools json");
+    assert_eq!(value["python"]["import"], "import mcd");
+    assert_eq!(value["package"]["tables"][0]["id"], "revenue");
+    assert_eq!(
+        value["package"]["tables"][0]["columns"][1]["name"],
+        "revenue_gbp"
+    );
+}
+
+#[test]
 fn render_html_writes_standalone_output() {
     let root = temp_path("render-html");
     fs::create_dir_all(&root).expect("temp root");

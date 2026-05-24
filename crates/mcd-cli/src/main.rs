@@ -105,6 +105,14 @@ enum Command {
         #[arg(long, value_enum, default_value_t = QueryOutputFormat::Table)]
         format: QueryOutputFormat,
     },
+    /// Show Python and SQL tool capabilities for agents.
+    Tools {
+        /// Optional package file whose table schemas should be listed.
+        file: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = ToolsOutputFormat::Text)]
+        format: ToolsOutputFormat,
+    },
     /// Render an MCD package.
     Render {
         /// Package file to render.
@@ -158,6 +166,12 @@ enum QueryOutputFormat {
     Table,
     Json,
     Csv,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum ToolsOutputFormat {
+    Text,
+    Json,
 }
 
 fn main() -> Result<()> {
@@ -214,6 +228,13 @@ fn main() -> Result<()> {
                 QueryOutputFormat::Table => commands::query::OutputFormat::Table,
                 QueryOutputFormat::Json => commands::query::OutputFormat::Json,
                 QueryOutputFormat::Csv => commands::query::OutputFormat::Csv,
+            },
+        ),
+        Command::Tools { file, format } => commands::tools::run(
+            file.as_deref(),
+            match format {
+                ToolsOutputFormat::Text => commands::tools::OutputFormat::Text,
+                ToolsOutputFormat::Json => commands::tools::OutputFormat::Json,
             },
         ),
         Command::Render {

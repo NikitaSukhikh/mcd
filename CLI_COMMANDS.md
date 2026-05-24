@@ -52,6 +52,7 @@ xdg-open revenue-report.html
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
 | `mcd query <file> <sql>` | Query package tables with read-only SQL. |
+| `mcd tools [file]` | Show Python and SQL tool capabilities for agents. |
 | `mcd render <file> <target> --output <output>` | Render an MCD package. |
 | `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
 | `mcd unpack <file> --output <directory>` | Unpack an MCD package into a directory. |
@@ -244,6 +245,33 @@ Examples:
 mcd query report.mcd "select count(*) as rows from revenue"
 mcd query report.mcd "select quarter, revenue_gbp from revenue order by revenue_gbp desc limit 1"
 mcd query report.mcd "select max(revenue_gbp) as max_revenue from revenue" --format json
+```
+
+## `tools`
+
+```bash
+mcd tools [options] [file]
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `[file]` | Optional package file whose table schemas should be listed. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--format <format>` | Output format: `text` or `json`. Defaults to `text`. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd tools
+mcd tools report.mcd
+mcd tools report.mcd --format json
 ```
 
 ## `render`

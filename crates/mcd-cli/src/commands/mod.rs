@@ -6,5 +6,6 @@ pub mod inspect;
 pub mod pack;
 pub mod query;
 pub mod render;
+pub mod tools;
 pub mod unpack;
 pub mod validate;
