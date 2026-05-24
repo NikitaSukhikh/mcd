@@ -51,6 +51,7 @@ xdg-open revenue-report.html
 | `mcd convert-pdf <file> --output <output>` | Convert a PDF into a minimal MCD package. |
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
+| `mcd query <file> <sql>` | Query package tables with read-only SQL. |
 | `mcd render <file> <target> --output <output>` | Render an MCD package. |
 | `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
 | `mcd unpack <file> --output <directory>` | Unpack an MCD package into a directory. |
@@ -215,6 +216,34 @@ mcd extract report.mcd --images
 mcd extract report.mcd --charts
 mcd extract report.mcd --annotations
 mcd extract report.mcd --annotations --page content/main.md --line 12
+```
+
+## `query`
+
+```bash
+mcd query [options] <file> <sql>
+```
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to query. |
+| `<sql>` | Read-only SQL query. Manifest table IDs are available as table names. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--format <format>` | Output format: `table`, `json`, or `csv`. Defaults to `table`. |
+| `-h`, `--help` | Print help. |
+
+Examples:
+
+```bash
+mcd query report.mcd "select count(*) as rows from revenue"
+mcd query report.mcd "select quarter, revenue_gbp from revenue order by revenue_gbp desc limit 1"
+mcd query report.mcd "select max(revenue_gbp) as max_revenue from revenue" --format json
 ```
 
 ## `render`

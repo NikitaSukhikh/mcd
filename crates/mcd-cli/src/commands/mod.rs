@@ -4,6 +4,7 @@ pub mod extract;
 pub mod init;
 pub mod inspect;
 pub mod pack;
+pub mod query;
 pub mod render;
 pub mod unpack;
 pub mod validate;

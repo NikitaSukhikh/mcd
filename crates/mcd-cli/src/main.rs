@@ -95,6 +95,16 @@ enum Command {
         #[arg(long)]
         charts: bool,
     },
+    /// Query package tables with read-only SQL.
+    Query {
+        /// Package file to query.
+        file: PathBuf,
+        /// SQL SELECT query to run against manifest table ids.
+        sql: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = QueryOutputFormat::Table)]
+        format: QueryOutputFormat,
+    },
     /// Render an MCD package.
     Render {
         /// Package file to render.
@@ -143,6 +153,13 @@ enum ExportMode {
     Annotations,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum QueryOutputFormat {
+    Table,
+    Json,
+    Csv,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -188,6 +205,15 @@ fn main() -> Result<()> {
                 page: page.as_deref(),
                 line,
                 charts,
+            },
+        ),
+        Command::Query { file, sql, format } => commands::query::run(
+            &file,
+            &sql,
+            match format {
+                QueryOutputFormat::Table => commands::query::OutputFormat::Table,
+                QueryOutputFormat::Json => commands::query::OutputFormat::Json,
+                QueryOutputFormat::Csv => commands::query::OutputFormat::Csv,
             },
         ),
         Command::Render {

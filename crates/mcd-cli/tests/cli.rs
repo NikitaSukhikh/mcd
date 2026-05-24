@@ -244,6 +244,35 @@ fn extract_modes_emit_stdout_and_reject_ambiguous_selection() {
 }
 
 #[test]
+fn query_runs_read_only_sql_against_package_tables() {
+    let revenue = example_package("revenue-report");
+
+    let aggregate = run(mcd()
+        .arg("query")
+        .arg(&revenue)
+        .arg("select count(*) as rows, max(revenue_gbp) as max_revenue from revenue")
+        .arg("--format")
+        .arg("json"));
+    assert!(aggregate.status.success(), "{}", stderr(&aggregate));
+    let json: serde_json::Value = serde_json::from_str(&stdout(&aggregate)).expect("query json");
+    assert_eq!(json["rows"][0]["rows"], 4);
+    assert_eq!(json["rows"][0]["max_revenue"], 158250.0);
+
+    let ordered = run(mcd()
+        .arg("query")
+        .arg(&revenue)
+        .arg("select quarter, revenue_gbp from revenue order by revenue_gbp desc limit 1")
+        .arg("--format")
+        .arg("csv"));
+    assert!(ordered.status.success(), "{}", stderr(&ordered));
+    assert_eq!(stdout(&ordered), "quarter,revenue_gbp\nQ4,158250\n");
+
+    let rejected = run(mcd().arg("query").arg(&revenue).arg("delete from revenue"));
+    assert!(!rejected.status.success());
+    assert!(stderr(&rejected).contains("query must be a SELECT statement"));
+}
+
+#[test]
 fn render_html_writes_standalone_output() {
     let root = temp_path("render-html");
     fs::create_dir_all(&root).expect("temp root");

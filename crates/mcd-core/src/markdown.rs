@@ -527,11 +527,8 @@ mod tests {
 
     #[test]
     fn preserves_inline_math_delimiters_in_text() {
-        let doc = parse_markdown(
-            "content/main.md",
-            "Inline $x^2 + y^2 = z^2$ remains math.",
-        )
-        .expect("markdown parses");
+        let doc = parse_markdown("content/main.md", "Inline $x^2 + y^2 = z^2$ remains math.")
+            .expect("markdown parses");
 
         match &doc.blocks[0] {
             DocumentBlock::Paragraph { text, .. } => {
