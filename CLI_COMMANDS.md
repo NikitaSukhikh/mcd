@@ -255,15 +255,17 @@ mcd query report.mcd "select table_id, column_name from mcd_primary_keys" --form
 mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
 ```
 
-The query runtime also exposes metadata tables:
+The query runtime uses an in-memory SQLite database. Package tables are loaded as SQLite tables named by manifest table ID. MCD primary keys and foreign keys are emitted as SQLite table constraints where they map cleanly, and MCD metadata is available through reserved introspection tables.
 
-| Table | Purpose |
-| --- | --- |
-| `mcd_tables` | Manifest table IDs and data/schema paths. |
-| `mcd_columns` | Column names, types, labels, nullability, enum values, and unit fields. |
-| `mcd_primary_keys` | Primary key columns in key order. |
-| `mcd_foreign_keys` | Foreign key columns and referenced primary key columns. |
-| `mcd_units` | Semantic unit metadata for measured numeric columns. |
+Metadata tables:
+
+| Table | Columns | Purpose |
+| --- | --- | --- |
+| `mcd_tables` | `table_id`, `data_path`, `schema_path` | Manifest table IDs and package source paths. |
+| `mcd_columns` | `table_id`, `column_name`, `ordinal`, `type`, `label`, `nullable`, `enum_values`, `unit_code`, `unit_label`, `unit_custom` | Column names, types, labels, nullability, enum values, and unit fields. |
+| `mcd_primary_keys` | `table_id`, `column_name`, `ordinal` | Primary key columns in key order. |
+| `mcd_foreign_keys` | `table_id`, `column_name`, `ordinal`, `ref_table_id`, `ref_column_name` | Foreign key columns and referenced primary key columns. |
+| `mcd_units` | `table_id`, `column_name`, `unit_code`, `unit_label`, `unit_custom` | Semantic unit metadata for measured numeric values. |
 
 SQLite key constraints are created for package tables, so table-valued PRAGMA
 queries also work:
@@ -272,6 +274,15 @@ queries also work:
 mcd query report.mcd "select name, pk from pragma_table_info('revenue') where pk > 0"
 mcd query report.mcd "select [table], [from], [to] from pragma_foreign_key_list('orders')"
 ```
+
+Agent relationship discovery pattern:
+
+```bash
+mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
+mcd query report.mcd "select a.*, b.* from child_table a join parent_table b on a.child_key = b.parent_key limit 10" --format json
+```
+
+The names `mcd_tables`, `mcd_columns`, `mcd_primary_keys`, `mcd_foreign_keys`, and `mcd_units` are reserved by the SQL runtime.
 
 ## `tools`
 
@@ -299,6 +310,8 @@ mcd tools
 mcd tools report.mcd
 mcd tools report.mcd --format json
 ```
+
+When a package file is provided, `tools` lists table schemas, primary keys, foreign keys, units, external data, and provenance path. Its SQL guidance includes the runtime metadata tables available to `mcd query`.
 
 ## `render`
 

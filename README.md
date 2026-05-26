@@ -175,6 +175,14 @@ mcd extract report.mcd --provenance
 mcd extract report.mcd --annotations
 ```
 
+Query tables and schema metadata with read-only SQL:
+
+```bash
+mcd query report.mcd "select count(*) as rows from revenue" --format json
+mcd query report.mcd "select table_id, column_name from mcd_primary_keys" --format json
+mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
+```
+
 ## Command Reference
 
 ### `mcd inspect`
@@ -252,6 +260,31 @@ mcd extract report.mcd --export annotations --page content/main.md --line 12
 ```
 
 `--page` and `--line` only apply to annotation export. Lines are 1-based.
+
+### `mcd query`
+
+Runs a read-only SQL query against package tables and MCD schema metadata.
+
+```bash
+mcd query <file.mcd> <sql> [--format table|json|csv]
+```
+
+Manifest table IDs are available as SQL table names. The query runtime also exposes `mcd_tables`, `mcd_columns`, `mcd_primary_keys`, `mcd_foreign_keys`, and `mcd_units` for SQLite-first discovery of columns, keys, relationships, and units.
+
+Examples:
+
+```bash
+mcd query report.mcd "select count(*) as rows from revenue"
+mcd query report.mcd "select table_id, column_name from mcd_primary_keys" --format json
+mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
+```
+
+SQLite key constraints are created for declared MCD primary and foreign keys, so table-valued PRAGMA introspection also works:
+
+```bash
+mcd query report.mcd "select name, pk from pragma_table_info('revenue') where pk > 0"
+mcd query report.mcd "select [table], [from], [to] from pragma_foreign_key_list('orders')"
+```
 
 ### `mcd render`
 

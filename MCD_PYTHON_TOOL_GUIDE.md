@@ -24,10 +24,11 @@ For agents, prefer this order:
 
 1. Validate the package.
 2. Inspect document context and available tables.
-3. Use SQL queries for table questions.
-4. Use schema keys, relationships, external data, and provenance shortcuts when lineage or joins matter.
-5. Use direct table/chart/image/annotation APIs when exact object access is needed.
-5. Return concise answers with the field names, table names, and condition values used.
+3. Use SQL metadata tables to discover columns, keys, relationships, and units.
+4. Use SQL queries for table questions.
+5. Use schema keys, relationships, external data, and provenance shortcuts when lineage or joins matter.
+6. Use direct table/chart/image/annotation APIs when exact object access is needed.
+7. Return concise answers with the field names, table names, and condition values used.
 
 ## Validate a Package
 
@@ -125,7 +126,7 @@ Then query only the tables needed for the task.
 
 ## Query Tables with SQL
 
-For table-heavy questions, use SQL. Manifest table IDs are available as SQL table names.
+For table-heavy questions, use SQL. Manifest table IDs are available as SQL table names, and the query runtime also exposes MCD metadata tables for discovering schemas, keys, relationships, and units.
 
 ```python
 result = doc.query("""
@@ -202,6 +203,18 @@ Use SQL for:
 - schema discovery through `mcd_tables`, `mcd_columns`, `mcd_primary_keys`, `mcd_foreign_keys`, and `mcd_units`
 - SQLite table-valued PRAGMA queries such as `pragma_table_info('table_id')` and `pragma_foreign_key_list('table_id')`
 
+MCD metadata tables available in every query:
+
+| Table | Important fields | Use |
+| --- | --- | --- |
+| `mcd_tables` | `table_id`, `data_path`, `schema_path` | List package tables and source paths. |
+| `mcd_columns` | `table_id`, `column_name`, `ordinal`, `type`, `label`, `nullable`, `enum_values`, `unit_code`, `unit_label`, `unit_custom` | Discover exact column names, types, and unit metadata. |
+| `mcd_primary_keys` | `table_id`, `column_name`, `ordinal` | Discover stable row identity columns in key order. |
+| `mcd_foreign_keys` | `table_id`, `column_name`, `ordinal`, `ref_table_id`, `ref_column_name` | Discover reliable joins between package tables. |
+| `mcd_units` | `table_id`, `column_name`, `unit_code`, `unit_label`, `unit_custom` | Inspect semantic units for measured numeric values. |
+
+SQLite constraints are also created for package tables where MCD schemas declare keys, so SQLite PRAGMA introspection can be used from read-only `select` queries.
+
 Examples:
 
 ```python
@@ -236,7 +249,7 @@ doc.query("""
     limit 5
 """).rows
 
-# Discover reliable joins from MCD foreign-key metadata.
+# Discover reliable joins from MCD foreign-key metadata before joining.
 doc.query("""
     select table_id, column_name, ref_table_id, ref_column_name
     from mcd_foreign_keys
@@ -370,7 +383,7 @@ for relationship in doc.relationships():
     print(relationship["tableId"], relationship["columns"], relationship["references"])
 ```
 
-For SQL-first agents, prefer `mcd_primary_keys` and `mcd_foreign_keys` because relationship discovery and analysis can stay in one query runtime.
+For SQL-first agents, prefer `mcd_primary_keys` and `mcd_foreign_keys` because relationship discovery and analysis can stay in one query runtime. Use `schema.primary_key`, `schema.foreign_keys`, and `doc.relationships()` when you are already working with Python objects instead of SQL.
 
 ## External Data and Provenance
 
@@ -585,6 +598,16 @@ Return both the ID and the metric value.
 
 ### Inspect Unknown Tables
 
+For SQL-first discovery:
+
+```python
+doc.query("""
+    select table_id, column_name, type, label, nullable, unit_code, unit_label
+    from mcd_columns
+    order by table_id, ordinal
+""").rows
+```
+
 ```python
 context = doc.to_agent_context(include_tables=False)
 
@@ -601,6 +624,18 @@ for column in table.schema.columns:
 ```
 
 ### Join Related Tables
+
+First discover relationships:
+
+```python
+doc.query("""
+    select table_id, column_name, ref_table_id, ref_column_name
+    from mcd_foreign_keys
+    where table_id = 'table_a'
+""").rows
+```
+
+Then join using the discovered columns:
 
 ```python
 result = doc.query("""
