@@ -25,4 +25,7 @@ validation = doc.validate()
 blocks = doc.blocks()
 table = doc.table("revenue")
 markdown = doc.markdown(expand_tables=True)
+external_data = doc.external_data()
+provenance = doc.provenance()
+relationships = doc.relationships()
 ```

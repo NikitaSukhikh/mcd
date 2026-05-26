@@ -1,6 +1,6 @@
 [package]
 name = "mcd-wasm"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -13,6 +13,6 @@ description = "Raw WebAssembly bindings for Markdown CSV Document packages."
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
+mcd-core = { version = "0.1.0-alpha.1", path = "../mcd-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

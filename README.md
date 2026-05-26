@@ -9,7 +9,7 @@ The `mcd` CLI works with `.mcd` files as packages, and it can also validate and 
 For command-line use, install the Rust CLI:
 
 ```bash
-cargo install mcd-cli --version 0.1.0-alpha.0
+cargo install mcd-cli --version 0.1.0-alpha.1
 ```
 
 Then use:
@@ -33,8 +33,8 @@ cargo install --path crates/mcd-cli
 Rust libraries are available as crates:
 
 ```bash
-cargo add mcd-core@0.1.0-alpha.0
-cargo add mcd-render@0.1.0-alpha.0
+cargo add mcd-core@0.1.0-alpha.1
+cargo add mcd-render@0.1.0-alpha.1
 ```
 
 TypeScript/JavaScript projects can install:
@@ -167,8 +167,11 @@ mcd extract report.mcd --markdown
 mcd extract report.mcd --markdown --expand-tables
 mcd extract report.mcd --json
 mcd extract report.mcd --tables
+mcd extract report.mcd --schemas
 mcd extract report.mcd --images
 mcd extract report.mcd --charts
+mcd extract report.mcd --external-data
+mcd extract report.mcd --provenance
 mcd extract report.mcd --annotations
 ```
 
@@ -216,8 +219,11 @@ mcd extract <file.mcd> --json
 mcd extract <file.mcd> --markdown
 mcd extract <file.mcd> --markdown --expand-tables
 mcd extract <file.mcd> --tables
+mcd extract <file.mcd> --schemas
 mcd extract <file.mcd> --images
 mcd extract <file.mcd> --charts
+mcd extract <file.mcd> --external-data
+mcd extract <file.mcd> --provenance
 mcd extract <file.mcd> --annotations
 ```
 
@@ -229,8 +235,11 @@ Modes:
 | `--markdown` | Original Markdown entrypoint content. |
 | `--markdown --expand-tables` | Markdown with table directives expanded as Markdown tables. |
 | `--tables` | JSON table metadata and row data. |
+| `--schemas` | JSON table schemas, primary keys, foreign keys, and semantic units. |
 | `--images` | JSON image metadata. |
 | `--charts` | JSON chart metadata and source data. |
+| `--external-data` | JSON external data references declared by the manifest. |
+| `--provenance` | JSON package-level provenance metadata. |
 | `--annotations` | JSON annotation metadata. |
 | `--export annotations` | Alias for annotation export. |
 

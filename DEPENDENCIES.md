@@ -34,8 +34,8 @@ proptest = "1.11.0"
 
 ```toml
 [dependencies]
-mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
-mcd-render = { version = "0.1.0-alpha.0", path = "../mcd-render" }
+mcd-core = { version = "0.1.0-alpha.1", path = "../mcd-core" }
+mcd-render = { version = "0.1.0-alpha.1", path = "../mcd-render" }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 ```
@@ -44,14 +44,14 @@ anyhow = "1"
 
 ```toml
 [dependencies]
-mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
+mcd-core = { version = "0.1.0-alpha.1", path = "../mcd-core" }
 ```
 
 ### WASM Crate (`mcd-wasm`)
 
 ```toml
 [dependencies]
-mcd-core = { version = "0.1.0-alpha.0", path = "../mcd-core" }
+mcd-core = { version = "0.1.0-alpha.1", path = "../mcd-core" }
 
 [lib]
 crate-type = ["cdylib"]

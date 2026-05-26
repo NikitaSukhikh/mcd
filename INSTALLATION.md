@@ -9,14 +9,14 @@ The CLI package is published on crates.io as `mcd-cli` and installs the `mcd`
 binary.
 
 ```bash
-cargo install mcd-cli --version 0.1.0-alpha.0
+cargo install mcd-cli --version 0.1.0-alpha.1
 ```
 
 If you do not want to compile locally, download a prebuilt CLI archive from the
 GitHub Release:
 
 ```text
-https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.0
+https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.1
 ```
 
 Prebuilt CLI archives are published for:
@@ -50,19 +50,19 @@ cargo run -p mcd-cli -- validate examples/minimal/minimal.mcd
 Add the parser/validator crate:
 
 ```bash
-cargo add mcd-core@0.1.0-alpha.0
+cargo add mcd-core@0.1.0-alpha.1
 ```
 
 Add the HTML renderer when your application needs rendered output:
 
 ```bash
-cargo add mcd-render@0.1.0-alpha.0
+cargo add mcd-render@0.1.0-alpha.1
 ```
 
 The raw WebAssembly-facing crate is also published:
 
 ```bash
-cargo add mcd-wasm@0.1.0-alpha.0
+cargo add mcd-wasm@0.1.0-alpha.1
 ```
 
 For command-line integration from Rust projects, install `mcd-cli` as shown in
@@ -141,13 +141,13 @@ available on `PATH`.
 Install the CLI with Cargo:
 
 ```bash
-cargo install mcd-cli --version 0.1.0-alpha.0
+cargo install mcd-cli --version 0.1.0-alpha.1
 ```
 
 Or download a prebuilt binary from the GitHub Release:
 
 ```text
-https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.0
+https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.1
 ```
 
 Example:
