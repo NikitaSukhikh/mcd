@@ -1,6 +1,6 @@
 //! CSV table loading and typed value coercion.
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use time::{
@@ -183,7 +183,65 @@ fn load_csv_rows(
         rows.push(TableRow { cells });
     }
 
+    validate_primary_key_rows(source, schema, &rows)?;
+
     Ok(rows)
+}
+
+fn validate_primary_key_rows(source: &str, schema: &TableSchema, rows: &[TableRow]) -> Result<()> {
+    if schema.primary_key.is_empty() {
+        return Ok(());
+    }
+
+    let mut keys = IndexSet::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_number = row_index + 2;
+        let key = row_key(row, &schema.primary_key).ok_or_else(|| {
+            McdError::from_diagnostic(
+                Diagnostic::error(
+                    "csv.primary_key.null",
+                    "Primary key columns cannot contain null values.",
+                )
+                .with_source(format!("{source}:{row_number}")),
+            )
+        })?;
+        if !keys.insert(key) {
+            return Err(McdError::from_diagnostic(
+                Diagnostic::error(
+                    "csv.primary_key.duplicate",
+                    format!("Duplicate primary key value in table '{}'.", schema.id),
+                )
+                .with_source(format!("{source}:{row_number}")),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Return a stable typed key for a row, or `None` if any key part is null.
+#[must_use]
+pub fn row_key(row: &TableRow, columns: &[String]) -> Option<Vec<String>> {
+    columns
+        .iter()
+        .map(|column| row.cells.get(column).and_then(typed_key_part))
+        .collect()
+}
+
+/// Return a stable typed key part for relational comparisons.
+#[must_use]
+pub fn typed_key_part(value: &TypedValue) -> Option<String> {
+    match value {
+        TypedValue::Null => None,
+        TypedValue::String(value) => Some(format!("string:{value}")),
+        TypedValue::Integer(value) => Some(format!("integer:{value}")),
+        TypedValue::Decimal(value) => Some(format!("decimal:{value}")),
+        TypedValue::Boolean(value) => Some(format!("boolean:{value}")),
+        TypedValue::Date(value) => Some(format!("date:{value}")),
+        TypedValue::Datetime(value) => Some(format!("datetime:{value}")),
+        TypedValue::Time(value) => Some(format!("time:{value}")),
+        TypedValue::Enum(value) => Some(format!("enum:{value}")),
+    }
 }
 
 /// Coerce one CSV cell into its schema type.
@@ -312,11 +370,53 @@ mod tests {
         }
     }
 
+    fn table_schema(primary_key: Vec<String>) -> TableSchema {
+        TableSchema {
+            id: "revenue".to_owned(),
+            primary_key,
+            foreign_keys: Vec::new(),
+            columns: vec![
+                TableColumnSchema {
+                    name: "quarter".to_owned(),
+                    value_type: ColumnType::String,
+                    label: None,
+                    nullable: false,
+                    enum_values: Vec::new(),
+                },
+                TableColumnSchema {
+                    name: "amount".to_owned(),
+                    value_type: ColumnType::Decimal,
+                    label: None,
+                    nullable: false,
+                    enum_values: Vec::new(),
+                },
+            ],
+        }
+    }
+
     #[test]
     fn coerces_decimal() {
         let value = coerce_cell("12.3400", &column(ColumnType::Decimal, false), "t.csv", 2)
             .expect("decimal");
         assert_eq!(value, TypedValue::Decimal("12.34".to_owned()));
+    }
+
+    #[test]
+    fn rejects_duplicate_primary_key_rows() {
+        let schema = table_schema(vec!["quarter".to_owned()]);
+        let err = load_csv_rows(
+            "revenue",
+            "tables/revenue.csv",
+            "tables/revenue.schema.json",
+            b"quarter,amount\nQ1,1\nQ1,2\n",
+            &schema,
+        )
+        .expect_err("duplicate key should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("csv.primary_key.duplicate")
+        );
     }
 
     #[test]

@@ -11,7 +11,7 @@ use crate::{
     errors::{Diagnostic, McdError},
     images::{load_manifest_images, validate_image_anchors},
     table_view::TableView,
-    tables::{DataTable, load_manifest_tables},
+    tables::{DataTable, load_manifest_tables, row_key},
 };
 
 /// Result of validating a package.
@@ -39,6 +39,7 @@ pub fn validate_package(package: &McdPackage) -> crate::Result<ValidationResult>
     let manifest = package.manifest()?;
     let document = McdDocument::from_package(package, &manifest)?;
     let tables = load_manifest_tables(package, &manifest)?;
+    validate_foreign_keys(&tables)?;
     let views = load_and_validate_views(package, &manifest, &tables)?;
     validate_table_anchors(&document, &tables, &views)?;
     let images = load_manifest_images(package, &manifest)?;
@@ -46,6 +47,116 @@ pub fn validate_package(package: &McdPackage) -> crate::Result<ValidationResult>
     let annotations = load_manifest_annotations(package, &manifest, &document)?;
     validate_annotation_markers(&document, &annotations)?;
     Ok(ValidationResult::valid())
+}
+
+fn validate_foreign_keys(tables: &IndexMap<String, DataTable>) -> crate::Result<()> {
+    for table in tables.values() {
+        for foreign_key in &table.schema.foreign_keys {
+            let target = tables.get(&foreign_key.references.table).ok_or_else(|| {
+                McdError::from_diagnostic(
+                    Diagnostic::error(
+                        "schema.foreign_key.references.table.unresolved",
+                        format!(
+                            "Foreign key in table '{}' references unknown table '{}'.",
+                            table.id, foreign_key.references.table
+                        ),
+                    )
+                    .with_source(table.source.clone()),
+                )
+            })?;
+
+            if foreign_key.references.columns != target.schema.primary_key {
+                return Err(McdError::from_diagnostic(
+                    Diagnostic::error(
+                        "schema.foreign_key.references.primary_key.mismatch",
+                        format!(
+                            "Foreign key in table '{}' must reference the primary key of table '{}'.",
+                            table.id, target.id
+                        ),
+                    )
+                    .with_source(table.source.clone()),
+                ));
+            }
+
+            for (local_column, target_column) in foreign_key
+                .columns
+                .iter()
+                .zip(foreign_key.references.columns.iter())
+            {
+                let local = table.schema.column(local_column).ok_or_else(|| {
+                    McdError::from_diagnostic(
+                        Diagnostic::error(
+                            "schema.foreign_key.column.unknown",
+                            format!(
+                                "Foreign key in table '{}' references unknown local column '{}'.",
+                                table.id, local_column
+                            ),
+                        )
+                        .with_source(table.source.clone()),
+                    )
+                })?;
+                let target = target.schema.column(target_column).ok_or_else(|| {
+                    McdError::from_diagnostic(
+                        Diagnostic::error(
+                            "schema.foreign_key.references.column.unknown",
+                            format!(
+                                "Foreign key in table '{}' references unknown column '{}' on table '{}'.",
+                                table.id, target_column, foreign_key.references.table
+                            ),
+                        )
+                        .with_source(table.source.clone()),
+                    )
+                })?;
+                if local.value_type != target.value_type {
+                    return Err(McdError::from_diagnostic(
+                        Diagnostic::error(
+                            "schema.foreign_key.column.type_mismatch",
+                            format!(
+                                "Foreign key column '{}.{}' has type {:?}, but target '{}.{}' has type {:?}.",
+                                table.id,
+                                local_column,
+                                local.value_type,
+                                foreign_key.references.table,
+                                target_column,
+                                target.value_type
+                            ),
+                        )
+                        .with_source(table.source.clone()),
+                    ));
+                }
+            }
+
+            let target_keys = target
+                .rows
+                .iter()
+                .filter_map(|row| row_key(row, &foreign_key.references.columns))
+                .collect::<std::collections::HashSet<_>>();
+
+            for (row_index, row) in table.rows.iter().enumerate() {
+                let Some(key) = row_key(row, &foreign_key.columns) else {
+                    continue;
+                };
+                if !target_keys.contains(&key) {
+                    return Err(McdError::from_diagnostic(
+                        Diagnostic::error(
+                            "csv.foreign_key.unresolved",
+                            format!(
+                                "Foreign key in table '{}' references a missing row in table '{}'.",
+                                table.id, foreign_key.references.table
+                            ),
+                        )
+                        .with_source(format!(
+                            "{}:{}",
+                            table.source,
+                            row_index + 2
+                        )),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn load_and_validate_views(
@@ -324,6 +435,54 @@ mod tests {
     }
 
     #[test]
+    fn validates_foreign_key_references() {
+        let package = package_with_related_tables("c1,Alice\n", "o1,c1\n");
+
+        validate_package(&package).expect("foreign key should validate");
+    }
+
+    #[test]
+    fn rejects_unresolved_foreign_key_row() {
+        let package = package_with_related_tables("c1,Alice\n", "o1,missing\n");
+
+        assert_validation_code(&package, "csv.foreign_key.unresolved");
+    }
+
+    #[test]
+    fn rejects_foreign_key_referencing_non_primary_key() {
+        let package = McdPackage::from_bytes(&zip_bytes(&[
+            ("mimetype", crate::package::MCD_MIMETYPE),
+            ("manifest.json", related_manifest()),
+            ("content/main.md", "# Orders\n"),
+            ("tables/customers.csv", "customer_id,name\nc1,Alice\n"),
+            (
+                "tables/customers.schema.json",
+                r#"{"id":"customers","primaryKey":["customer_id"],"columns":[
+                    {"name":"customer_id","type":"string"},
+                    {"name":"name","type":"string"}
+                ]}"#,
+            ),
+            ("tables/orders.csv", "order_id,customer_id\no1,c1\n"),
+            (
+                "tables/orders.schema.json",
+                r#"{"id":"orders","primaryKey":["order_id"],"foreignKeys":[{
+                    "columns":["customer_id"],
+                    "references":{"table":"customers","columns":["name"]}
+                }],"columns":[
+                    {"name":"order_id","type":"string"},
+                    {"name":"customer_id","type":"string"}
+                ]}"#,
+            ),
+        ]))
+        .expect("package opens");
+
+        assert_validation_code(
+            &package,
+            "schema.foreign_key.references.primary_key.mismatch",
+        );
+    }
+
+    #[test]
     fn validates_image_package() {
         let package = image_package(
             safe_svg(),
@@ -529,6 +688,51 @@ mod tests {
                     "chart":"tables/revenue.chart.view.json"
                 }
             }]
+        }"#
+    }
+
+    fn package_with_related_tables(customers_csv_rows: &str, orders_csv_rows: &str) -> McdPackage {
+        let customers_csv = format!("customer_id,name\n{customers_csv_rows}");
+        let orders_csv = format!("order_id,customer_id\n{orders_csv_rows}");
+        McdPackage::from_bytes(&zip_bytes_owned(vec![
+            ("mimetype", crate::package::MCD_MIMETYPE.to_owned()),
+            ("manifest.json", related_manifest().to_owned()),
+            ("content/main.md", "# Orders\n".to_owned()),
+            ("tables/customers.csv", customers_csv),
+            (
+                "tables/customers.schema.json",
+                r#"{"id":"customers","primaryKey":["customer_id"],"columns":[
+                    {"name":"customer_id","type":"string"},
+                    {"name":"name","type":"string"}
+                ]}"#
+                .to_owned(),
+            ),
+            ("tables/orders.csv", orders_csv),
+            (
+                "tables/orders.schema.json",
+                r#"{"id":"orders","primaryKey":["order_id"],"foreignKeys":[{
+                    "columns":["customer_id"],
+                    "references":{"table":"customers","columns":["customer_id"]}
+                }],"columns":[
+                    {"name":"order_id","type":"string"},
+                    {"name":"customer_id","type":"string"}
+                ]}"#
+                .to_owned(),
+            ),
+        ]))
+        .expect("package opens")
+    }
+
+    fn related_manifest() -> &'static str {
+        r#"{
+            "format":"MCD",
+            "version":"0.1",
+            "profile":"MCD-Core",
+            "entrypoint":"content/main.md",
+            "tables":[
+                {"id":"customers","data":"tables/customers.csv","schema":"tables/customers.schema.json"},
+                {"id":"orders","data":"tables/orders.csv","schema":"tables/orders.schema.json"}
+            ]
         }"#
     }
 

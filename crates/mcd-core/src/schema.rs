@@ -13,6 +13,12 @@ use crate::{
 pub struct TableSchema {
     /// Stable schema/table id.
     pub id: String,
+    /// Columns that uniquely identify rows in this table.
+    #[serde(default, rename = "primaryKey", skip_serializing_if = "Vec::is_empty")]
+    pub primary_key: Vec<String>,
+    /// Foreign-key relationships from this table to other tables.
+    #[serde(default, rename = "foreignKeys", skip_serializing_if = "Vec::is_empty")]
+    pub foreign_keys: Vec<ForeignKeySchema>,
     /// Ordered table columns.
     pub columns: Vec<TableColumnSchema>,
 }
@@ -76,6 +82,34 @@ impl TableSchema {
             }
         }
 
+        if has_duplicates(&self.primary_key) {
+            return Err(schema_error(
+                "schema.primary_key.column.duplicate",
+                "Primary key columns must be unique.",
+                source,
+            ));
+        }
+        for key_column in &self.primary_key {
+            let Some(column) = self.column(key_column) else {
+                return Err(schema_error(
+                    "schema.primary_key.column.unknown",
+                    format!("Primary key references unknown column '{key_column}'."),
+                    source,
+                ));
+            };
+            if column.nullable {
+                return Err(schema_error(
+                    "schema.primary_key.column.nullable",
+                    format!("Primary key column '{key_column}' cannot be nullable."),
+                    source,
+                ));
+            }
+        }
+
+        for foreign_key in &self.foreign_keys {
+            foreign_key.validate(self, source)?;
+        }
+
         Ok(())
     }
 
@@ -99,6 +133,83 @@ impl TableSchema {
     pub fn column(&self, name: &str) -> Option<&TableColumnSchema> {
         self.columns.iter().find(|column| column.name == name)
     }
+}
+
+/// A foreign-key relationship from this table to another table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKeySchema {
+    /// Local columns in this table.
+    pub columns: Vec<String>,
+    /// Referenced table and columns.
+    pub references: ForeignKeyReference,
+}
+
+impl ForeignKeySchema {
+    fn validate(&self, schema: &TableSchema, source: &str) -> Result<()> {
+        if self.columns.is_empty() {
+            return Err(schema_error(
+                "schema.foreign_key.columns.empty",
+                "Foreign keys must reference at least one local column.",
+                source,
+            ));
+        }
+        if self.references.columns.is_empty() {
+            return Err(schema_error(
+                "schema.foreign_key.references.columns.empty",
+                "Foreign keys must reference at least one target column.",
+                source,
+            ));
+        }
+        if self.columns.len() != self.references.columns.len() {
+            return Err(schema_error(
+                "schema.foreign_key.column_count.mismatch",
+                "Foreign key local and referenced column counts must match.",
+                source,
+            ));
+        }
+        if has_duplicates(&self.columns) {
+            return Err(schema_error(
+                "schema.foreign_key.column.duplicate",
+                "Foreign key local columns must be unique.",
+                source,
+            ));
+        }
+        if has_duplicates(&self.references.columns) {
+            return Err(schema_error(
+                "schema.foreign_key.references.column.duplicate",
+                "Foreign key referenced columns must be unique.",
+                source,
+            ));
+        }
+        for column in &self.columns {
+            if !schema.has_column(column) {
+                return Err(schema_error(
+                    "schema.foreign_key.column.unknown",
+                    format!("Foreign key references unknown local column '{column}'."),
+                    source,
+                ));
+            }
+        }
+        if self.references.table.trim().is_empty() {
+            return Err(schema_error(
+                "schema.foreign_key.references.table.empty",
+                "Foreign key referenced table cannot be empty.",
+                source,
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Foreign-key target table and columns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKeyReference {
+    /// Referenced manifest table id.
+    pub table: String,
+    /// Referenced columns in the target table.
+    pub columns: Vec<String>,
 }
 
 /// One table column schema.
@@ -161,6 +272,11 @@ fn schema_error(code: impl Into<String>, message: impl Into<String>, source: &st
     McdError::from_diagnostic(Diagnostic::error(code, message).with_source(source.to_owned()))
 }
 
+fn has_duplicates(values: &[String]) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    values.iter().any(|value| !seen.insert(value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,6 +286,7 @@ mod tests {
         let schema = serde_json::from_str::<TableSchema>(
             r#"{
                 "id": "revenue",
+                "primaryKey": ["quarter"],
                 "columns": [
                     {"name": "quarter", "type": "string"},
                     {"name": "amount", "type": "decimal", "nullable": true}
@@ -180,6 +297,7 @@ mod tests {
 
         assert_eq!(schema.columns[1].value_type, ColumnType::Decimal);
         assert!(schema.columns[1].nullable);
+        assert_eq!(schema.primary_key, ["quarter"]);
     }
 
     #[test]
@@ -195,6 +313,89 @@ mod tests {
         assert_eq!(
             err.diagnostic().map(|d| d.code.as_str()),
             Some("schema.enum.values.missing")
+        );
+    }
+
+    #[test]
+    fn primary_key_columns_must_exist_and_be_nonnullable() {
+        let missing = serde_json::from_str::<TableSchema>(
+            r#"{"id":"revenue","primaryKey":["missing"],"columns":[{"name":"quarter","type":"string"}]}"#,
+        )
+        .expect("schema parses");
+        let err = missing
+            .validate("tables/revenue.schema.json")
+            .expect_err("invalid");
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("schema.primary_key.column.unknown")
+        );
+
+        let nullable = serde_json::from_str::<TableSchema>(
+            r#"{"id":"revenue","primaryKey":["quarter"],"columns":[{"name":"quarter","type":"string","nullable":true}]}"#,
+        )
+        .expect("schema parses");
+        let err = nullable
+            .validate("tables/revenue.schema.json")
+            .expect_err("invalid");
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("schema.primary_key.column.nullable")
+        );
+    }
+
+    #[test]
+    fn foreign_key_columns_must_be_well_formed() {
+        let schema = serde_json::from_str::<TableSchema>(
+            r#"{
+                "id":"orders",
+                "foreignKeys":[{
+                    "columns":["missing"],
+                    "references":{"table":"customers","columns":["customer_id"]}
+                }],
+                "columns":[{"name":"customer_id","type":"string"}]
+            }"#,
+        )
+        .expect("schema parses");
+        let err = schema
+            .validate("tables/orders.schema.json")
+            .expect_err("invalid");
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("schema.foreign_key.column.unknown")
+        );
+    }
+
+    #[test]
+    fn key_columns_must_be_unique() {
+        let duplicate_primary_key = serde_json::from_str::<TableSchema>(
+            r#"{"id":"revenue","primaryKey":["quarter","quarter"],"columns":[{"name":"quarter","type":"string"}]}"#,
+        )
+        .expect("schema parses");
+        let err = duplicate_primary_key
+            .validate("tables/revenue.schema.json")
+            .expect_err("invalid");
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("schema.primary_key.column.duplicate")
+        );
+
+        let duplicate_foreign_key = serde_json::from_str::<TableSchema>(
+            r#"{
+                "id":"orders",
+                "foreignKeys":[{
+                    "columns":["customer_id","customer_id"],
+                    "references":{"table":"customers","columns":["customer_id","other_id"]}
+                }],
+                "columns":[{"name":"customer_id","type":"string"},{"name":"other_id","type":"string"}]
+            }"#,
+        )
+        .expect("schema parses");
+        let err = duplicate_foreign_key
+            .validate("tables/orders.schema.json")
+            .expect_err("invalid");
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("schema.foreign_key.column.duplicate")
         );
     }
 }

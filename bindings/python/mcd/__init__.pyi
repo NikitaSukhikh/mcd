@@ -31,6 +31,8 @@ class Block:
 
 class TableSchema:
     id: str
+    primary_key: list[str]
+    foreign_keys: list[dict[str, Any]]
     columns: list[dict[str, Any]]
 
     def as_dict(self) -> dict[str, Any]: ...

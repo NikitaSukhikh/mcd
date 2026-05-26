@@ -399,6 +399,8 @@ mod tests {
     fn schema() -> TableSchema {
         TableSchema {
             id: "revenue".to_owned(),
+            primary_key: Vec::new(),
+            foreign_keys: Vec::new(),
             columns: vec![
                 TableColumnSchema {
                     name: "quarter".to_owned(),

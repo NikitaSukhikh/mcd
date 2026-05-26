@@ -299,6 +299,19 @@ impl PyTableSchema {
         )
     }
 
+    #[getter]
+    fn primary_key(&self) -> Vec<String> {
+        self.schema.primary_key.clone()
+    }
+
+    #[getter]
+    fn foreign_keys(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(&self.schema.foreign_keys).map_err(json_err_to_py)?,
+        )
+    }
+
     fn as_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         json_to_py(
             py,

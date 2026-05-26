@@ -326,6 +326,7 @@ CSV typing rules:
 ```json
 {
   "id": "revenue",
+  "primaryKey": ["quarter"],
   "columns": [
     {
       "name": "quarter",
@@ -342,6 +343,32 @@ CSV typing rules:
   ]
 }
 ```
+
+Use `primaryKey` when one or more columns uniquely identify rows. Primary-key columns must exist, must be non-nullable, and their combined values must be unique across the CSV.
+
+Use `foreignKeys` when rows reference rows in another manifest-declared table:
+
+```json
+{
+  "id": "orders",
+  "primaryKey": ["order_id"],
+  "foreignKeys": [
+    {
+      "columns": ["customer_id"],
+      "references": {
+        "table": "customers",
+        "columns": ["customer_id"]
+      }
+    }
+  ],
+  "columns": [
+    { "name": "order_id", "type": "string", "nullable": false },
+    { "name": "customer_id", "type": "string", "nullable": false }
+  ]
+}
+```
+
+Foreign keys must reference the target table's `primaryKey`, use compatible column types, and resolve to existing target rows.
 
 Allowed column types:
 
