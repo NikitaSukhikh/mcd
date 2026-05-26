@@ -1,5 +1,8 @@
 {
   "id": "powertrain_calibration_specs",
+  "primaryKey": [
+    "calibration_id"
+  ],
   "columns": [
     {
       "name": "calibration_id",
@@ -23,7 +26,11 @@
       "name": "displacement_l",
       "type": "decimal",
       "label": "Displacement",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "L",
+        "label": "L"
+      }
     },
     {
       "name": "cylinders",
@@ -35,19 +42,31 @@
       "name": "boost_pressure_kpa",
       "type": "decimal",
       "label": "Boost Pressure",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kPa",
+        "label": "kPa"
+      }
     },
     {
       "name": "peak_power_kw",
       "type": "decimal",
       "label": "Peak Power",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kW",
+        "label": "kW"
+      }
     },
     {
       "name": "peak_torque_nm",
       "type": "decimal",
       "label": "Peak Torque",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "N.m",
+        "label": "Nm"
+      }
     },
     {
       "name": "final_drive_ratio",
@@ -65,13 +84,21 @@
       "name": "wltp_co2_g_per_km",
       "type": "integer",
       "label": "WLTP CO2",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "g/km",
+        "label": "g/km"
+      }
     },
     {
       "name": "thermal_limit_deg_c",
       "type": "decimal",
       "label": "Thermal Limit",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "deg_C",
+        "label": "deg C"
+      }
     },
     {
       "name": "ecu_checksum",

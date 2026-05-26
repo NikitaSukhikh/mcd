@@ -9,7 +9,8 @@ use mcd_core::{
     errors::{Diagnostic, DiagnosticLevel},
     export::{
         ChartExportItem, agent_context_export, annotation_export, chart_export,
-        expanded_markdown_export, image_export, original_markdown_export, table_export,
+        expanded_markdown_export, external_data_export, image_export, original_markdown_export,
+        provenance_export, table_export,
     },
     images::ImageMetadata,
     pdf::{PdfConversionOptions, pdf_to_mcd_bytes as core_pdf_to_mcd_bytes},
@@ -129,6 +130,45 @@ impl PyDocument {
             .into_iter()
             .map(|annotation| PyAnnotation { annotation })
             .collect())
+    }
+
+    fn external_data(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(
+                external_data_export(&self.package)
+                    .map_err(err_to_py)?
+                    .external_data,
+            )
+            .map_err(json_err_to_py)?,
+        )
+    }
+
+    fn provenance(&self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::to_value(
+                provenance_export(&self.package)
+                    .map_err(err_to_py)?
+                    .provenance,
+            )
+            .map_err(json_err_to_py)?,
+        )
+    }
+
+    fn relationships(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let tables = table_export(&self.package).map_err(err_to_py)?.tables;
+        let mut relationships = Vec::new();
+        for table in tables {
+            for foreign_key in table.schema.foreign_keys {
+                relationships.push(serde_json::json!({
+                    "tableId": table.id.clone(),
+                    "columns": foreign_key.columns,
+                    "references": foreign_key.references,
+                }));
+            }
+        }
+        json_to_py(py, &Value::Array(relationships))
     }
 
     #[pyo3(signature = (expand_tables = false))]

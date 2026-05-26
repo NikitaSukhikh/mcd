@@ -41,6 +41,9 @@ fn guide_json(package: Option<Value>) -> Value {
                 "doc.image(id) -> Image",
                 "doc.annotation(id) -> Annotation",
                 "doc.annotations() -> list[Annotation]",
+                "doc.external_data() -> list[dict]",
+                "doc.provenance() -> dict | None",
+                "doc.relationships() -> list[dict]",
                 "doc.markdown(expand_tables=False) -> str",
                 "doc.query(sql) -> QueryResult",
                 "doc.to_agent_context(include_tables=True, include_layout=False) -> dict"
@@ -68,6 +71,8 @@ fn guide_json(package: Option<Value>) -> Value {
                 ],
                 "TableSchema": [
                     "schema.id",
+                    "schema.primary_key",
+                    "schema.foreign_keys",
                     "schema.columns",
                     "schema.as_dict()"
                 ],
@@ -166,6 +171,7 @@ fn package_schema_summary(path: &Path) -> Result<Value> {
                         "label": column.label.as_deref(),
                         "nullable": column.nullable,
                         "enumValues": &column.enum_values,
+                        "unit": &column.unit,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -173,6 +179,8 @@ fn package_schema_summary(path: &Path) -> Result<Value> {
                 "id": entry.id.as_str(),
                 "data": entry.data.as_str(),
                 "schema": entry.schema.as_str(),
+                "primaryKey": &schema.primary_key,
+                "foreignKeys": &schema.foreign_keys,
                 "views": &entry.views,
                 "columns": columns,
             }))
@@ -183,6 +191,8 @@ fn package_schema_summary(path: &Path) -> Result<Value> {
         "file": path.display().to_string(),
         "title": manifest.title.as_deref(),
         "entrypoint": manifest.entrypoint.as_str(),
+        "externalData": &manifest.external_data,
+        "provenance": manifest.provenance.as_deref(),
         "tables": tables,
     }))
 }
@@ -234,6 +244,46 @@ fn guide_text(guide: &Value) -> String {
                     table["id"].as_str().unwrap_or_default(),
                     table["data"].as_str().unwrap_or_default()
                 ));
+                if let Some(primary_key) = table["primaryKey"].as_array()
+                    && !primary_key.is_empty()
+                {
+                    let columns = primary_key
+                        .iter()
+                        .filter_map(|value| value.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    lines.push(format!("      primary key: {columns}"));
+                }
+                if let Some(foreign_keys) = table["foreignKeys"].as_array() {
+                    for foreign_key in foreign_keys {
+                        let columns = foreign_key["columns"]
+                            .as_array()
+                            .map(|columns| {
+                                columns
+                                    .iter()
+                                    .filter_map(|value| value.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_default();
+                        let target_table = foreign_key["references"]["table"]
+                            .as_str()
+                            .unwrap_or_default();
+                        let target_columns = foreign_key["references"]["columns"]
+                            .as_array()
+                            .map(|columns| {
+                                columns
+                                    .iter()
+                                    .filter_map(|value| value.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_default();
+                        lines.push(format!(
+                            "      foreign key: ({columns}) -> {target_table}({target_columns})"
+                        ));
+                    }
+                }
                 if let Some(columns) = table["columns"].as_array() {
                     for column in columns {
                         let nullable = if column["nullable"].as_bool().unwrap_or(false) {
@@ -241,15 +291,41 @@ fn guide_text(guide: &Value) -> String {
                         } else {
                             ""
                         };
+                        let unit = column["unit"]
+                            .as_object()
+                            .and_then(|unit| {
+                                unit.get("label")
+                                    .or_else(|| unit.get("code"))
+                                    .and_then(|value| value.as_str())
+                            })
+                            .map(|unit| format!(", unit {unit}"))
+                            .unwrap_or_default();
                         lines.push(format!(
-                            "      {}: {}{}",
+                            "      {}: {}{}{}",
                             column["name"].as_str().unwrap_or_default(),
                             column["type"].as_str().unwrap_or_default(),
-                            nullable
+                            nullable,
+                            unit
                         ));
                     }
                 }
             }
+        }
+        if let Some(external_data) = package["externalData"].as_array()
+            && !external_data.is_empty()
+        {
+            lines.push("Package external data:".to_owned());
+            for item in external_data {
+                lines.push(format!(
+                    "  - {} ({}, {})",
+                    item["id"].as_str().unwrap_or_default(),
+                    item["mediaType"].as_str().unwrap_or_default(),
+                    item["uri"].as_str().unwrap_or_default()
+                ));
+            }
+        }
+        if let Some(provenance) = package["provenance"].as_str() {
+            lines.push(format!("Package provenance: {provenance}"));
         }
         lines.push(String::new());
     }

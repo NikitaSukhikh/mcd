@@ -81,6 +81,30 @@ def test_agent_context_options() -> None:
     assert context["charts"][0]["tableId"] == "revenue"
 
 
+def test_provenance_external_data_and_relationship_shortcuts() -> None:
+    doc = mcd.open(example("auto-manufacturer-tech-spec"))
+
+    external_data = doc.external_data()
+    assert external_data[0]["id"] == "raw-auto-spec-source"
+    assert external_data[0]["mediaType"] == "text/csv"
+
+    provenance = doc.provenance()
+    assert provenance is not None
+    assert provenance["activities"][0]["id"] == "derive-example-package"
+
+    relationships = doc.relationships()
+    assert relationships == [
+        {
+            "tableId": "chassis_brake_validation_specs",
+            "columns": ["vehicle_variant"],
+            "references": {
+                "table": "vehicle_variant_configuration_specs",
+                "columns": ["variant_id"],
+            },
+        }
+    ]
+
+
 def test_sql_query_api() -> None:
     doc = mcd.open(example("revenue-report"))
 

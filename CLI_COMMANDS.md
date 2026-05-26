@@ -52,7 +52,7 @@ xdg-open revenue-report.html
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
 | `mcd query <file> <sql>` | Query package tables with read-only SQL. |
-| `mcd tools [file]` | Show Python and SQL tool capabilities for agents. |
+| `mcd tools [file]` | Show Python, SQL, schema, relationship, unit, external-data, and provenance capabilities for agents. |
 | `mcd render <file> <target> --output <output>` | Render an MCD package. |
 | `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
 | `mcd unpack <file> --output <directory>` | Unpack an MCD package into a directory. |
@@ -192,9 +192,12 @@ Choose exactly one extraction mode:
 | `--json` | Emit canonical JSON. |
 | `--markdown` | Emit Markdown. |
 | `--tables` | Emit table data. |
+| `--schemas` | Emit table schemas, primary keys, foreign keys, and semantic units. |
 | `--images` | Emit image metadata. |
 | `--annotations` | Emit annotation metadata. |
 | `--charts` | Emit chart metadata and source data. |
+| `--external-data` | Emit external data references declared by the manifest. |
+| `--provenance` | Emit package-level provenance metadata. |
 | `--export annotations` | Export annotations by named content type. |
 
 Additional options:
@@ -213,8 +216,11 @@ mcd extract report.mcd --json
 mcd extract report.mcd --markdown
 mcd extract report.mcd --markdown --expand-tables
 mcd extract report.mcd --tables
+mcd extract report.mcd --schemas
 mcd extract report.mcd --images
 mcd extract report.mcd --charts
+mcd extract report.mcd --external-data
+mcd extract report.mcd --provenance
 mcd extract report.mcd --annotations
 mcd extract report.mcd --annotations --page content/main.md --line 12
 ```
@@ -257,7 +263,7 @@ Arguments:
 
 | Argument | Purpose |
 | --- | --- |
-| `[file]` | Optional package file whose table schemas should be listed. |
+| `[file]` | Optional package file whose table schemas, keys, relationships, units, external data, and provenance path should be listed. |
 
 Options:
 

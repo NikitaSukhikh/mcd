@@ -19,25 +19,25 @@
       "name": "front_spring_rate_n_mm",
       "label": "Front Spring Rate",
       "format": "number",
-      "unit": "N/mm"
+      "unitLabel": "N/mm"
     },
     {
       "name": "rear_spring_rate_n_mm",
       "label": "Rear Spring Rate",
       "format": "number",
-      "unit": "N/mm"
+      "unitLabel": "N/mm"
     },
     {
       "name": "damping_front_ns_m",
       "label": "Front Damping",
       "format": "number",
-      "unit": "Ns/m"
+      "unitLabel": "Ns/m"
     },
     {
       "name": "damping_rear_ns_m",
       "label": "Rear Damping",
       "format": "number",
-      "unit": "Ns/m"
+      "unitLabel": "Ns/m"
     },
     {
       "name": "tire_size",
@@ -47,31 +47,31 @@
       "name": "rotor_front_mm",
       "label": "Front Rotor",
       "format": "number",
-      "unit": "mm"
+      "unitLabel": "mm"
     },
     {
       "name": "rotor_rear_mm",
       "label": "Rear Rotor",
       "format": "number",
-      "unit": "mm"
+      "unitLabel": "mm"
     },
     {
       "name": "stop_distance_100_0_m",
       "label": "Stop Distance 100-0",
       "format": "number",
-      "unit": "m"
+      "unitLabel": "m"
     },
     {
       "name": "lateral_grip_g",
       "label": "Lateral Grip",
       "format": "number",
-      "unit": "g"
+      "unitLabel": "g"
     },
     {
       "name": "stability_margin_pct",
       "label": "Stability Margin",
       "format": "number",
-      "unit": "%"
+      "unitLabel": "%"
     },
     {
       "name": "validation_date",

@@ -1,5 +1,8 @@
 {
   "id": "battery_pack_module_specs",
+  "primaryKey": [
+    "pack_id"
+  ],
   "columns": [
     {
       "name": "pack_id",
@@ -29,13 +32,21 @@
       "name": "nominal_voltage_v",
       "type": "decimal",
       "label": "Nominal Voltage",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "V",
+        "label": "V"
+      }
     },
     {
       "name": "capacity_kwh",
       "type": "decimal",
       "label": "Capacity",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kWh",
+        "label": "kWh"
+      }
     },
     {
       "name": "module_count",
@@ -47,37 +58,61 @@
       "name": "cell_capacity_ah",
       "type": "decimal",
       "label": "Cell Capacity",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "Ah",
+        "label": "Ah"
+      }
     },
     {
       "name": "peak_discharge_kw",
       "type": "decimal",
       "label": "Peak Discharge",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kW",
+        "label": "kW"
+      }
     },
     {
       "name": "continuous_charge_kw",
       "type": "decimal",
       "label": "Continuous Charge",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kW",
+        "label": "kW"
+      }
     },
     {
       "name": "coolant_flow_l_min",
       "type": "decimal",
       "label": "Coolant Flow",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "L/min",
+        "label": "L/min"
+      }
     },
     {
       "name": "mass_kg",
       "type": "decimal",
       "label": "Mass",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "kg",
+        "label": "kg"
+      }
     },
     {
       "name": "estimated_range_km",
       "type": "integer",
       "label": "Estimated Range",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "km",
+        "label": "km"
+      }
     },
     {
       "name": "bms_firmware_version",

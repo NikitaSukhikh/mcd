@@ -233,6 +233,39 @@ fn extract_modes_emit_stdout_and_reject_ambiguous_selection() {
     assert_eq!(annotation_json["annotations"][0]["kind"], "comment");
     let _ = fs::remove_file(annotated);
 
+    let auto = example_package("auto-manufacturer-tech-spec");
+    let schemas = run(mcd().arg("extract").arg(&auto).arg("--schemas"));
+    assert!(schemas.status.success(), "{}", stderr(&schemas));
+    let schema_json: serde_json::Value =
+        serde_json::from_str(&stdout(&schemas)).expect("schema json");
+    assert_eq!(schema_json["schemas"][0]["primaryKey"][0], "variant_id");
+    assert_eq!(
+        schema_json["schemas"][0]["columns"][6]["unit"]["code"],
+        "mm"
+    );
+    assert_eq!(
+        schema_json["schemas"][3]["foreignKeys"][0]["references"]["table"],
+        "vehicle_variant_configuration_specs"
+    );
+
+    let external_data = run(mcd().arg("extract").arg(&auto).arg("--external-data"));
+    assert!(external_data.status.success(), "{}", stderr(&external_data));
+    let external_json: serde_json::Value =
+        serde_json::from_str(&stdout(&external_data)).expect("external data json");
+    assert_eq!(
+        external_json["externalData"][0]["id"],
+        "raw-auto-spec-source"
+    );
+
+    let provenance = run(mcd().arg("extract").arg(&auto).arg("--provenance"));
+    assert!(provenance.status.success(), "{}", stderr(&provenance));
+    let provenance_json: serde_json::Value =
+        serde_json::from_str(&stdout(&provenance)).expect("provenance json");
+    assert_eq!(
+        provenance_json["provenance"]["activities"][0]["id"],
+        "derive-example-package"
+    );
+
     let ambiguous = run(mcd()
         .arg("extract")
         .arg(&revenue)
@@ -295,6 +328,40 @@ fn tools_lists_python_sql_and_optional_package_schema() {
     assert_eq!(
         value["package"]["tables"][0]["columns"][1]["name"],
         "revenue_gbp"
+    );
+
+    let auto = example_package("auto-manufacturer-tech-spec");
+    let auto_text = run(mcd().arg("tools").arg(&auto));
+    assert!(auto_text.status.success(), "{}", stderr(&auto_text));
+    assert!(stdout(&auto_text).contains("primary key: variant_id"));
+    assert!(stdout(&auto_text).contains(
+        "foreign key: (vehicle_variant) -> vehicle_variant_configuration_specs(variant_id)"
+    ));
+    assert!(stdout(&auto_text).contains("wheelbase_mm: integer, unit mm"));
+
+    let auto_json_output = run(mcd().arg("tools").arg(&auto).arg("--format").arg("json"));
+    assert!(
+        auto_json_output.status.success(),
+        "{}",
+        stderr(&auto_json_output)
+    );
+    let auto_value: serde_json::Value =
+        serde_json::from_str(&stdout(&auto_json_output)).expect("tools auto json");
+    assert_eq!(
+        auto_value["package"]["tables"][0]["primaryKey"][0],
+        "variant_id"
+    );
+    assert_eq!(
+        auto_value["package"]["tables"][0]["columns"][6]["unit"]["code"],
+        "mm"
+    );
+    assert_eq!(
+        auto_value["package"]["externalData"][0]["id"],
+        "raw-auto-spec-source"
+    );
+    assert_eq!(
+        auto_value["package"]["provenance"],
+        "provenance/provenance.json"
     );
 }
 

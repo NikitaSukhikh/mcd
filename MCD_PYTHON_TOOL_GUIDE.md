@@ -25,7 +25,8 @@ For agents, prefer this order:
 1. Validate the package.
 2. Inspect document context and available tables.
 3. Use SQL queries for table questions.
-4. Use direct table/chart/image/annotation APIs when exact object access is needed.
+4. Use schema keys, relationships, external data, and provenance shortcuts when lineage or joins matter.
+5. Use direct table/chart/image/annotation APIs when exact object access is needed.
 5. Return concise answers with the field names, table names, and condition values used.
 
 ## Validate a Package
@@ -318,6 +319,8 @@ Commands:
 
 ```python
 schema.id
+schema.primary_key
+schema.foreign_keys
 schema.columns
 schema.as_dict()
 ```
@@ -326,8 +329,42 @@ Use schema columns to discover exact column names before writing SQL.
 
 ```python
 for column in schema.columns:
-    print(column["name"], column["type"], column.get("label"))
+    print(column["name"], column["type"], column.get("label"), column.get("unit"))
 ```
+
+Use keys and foreign keys to build joins without guessing:
+
+```python
+print(schema.primary_key)
+print(schema.foreign_keys)
+```
+
+For all package relationships:
+
+```python
+for relationship in doc.relationships():
+    print(relationship["tableId"], relationship["columns"], relationship["references"])
+```
+
+## External Data and Provenance
+
+Read manifest-declared external resources:
+
+```python
+for item in doc.external_data():
+    print(item["id"], item["uri"], item["mediaType"])
+```
+
+Read package-level provenance metadata:
+
+```python
+provenance = doc.provenance()
+if provenance:
+    print(provenance.get("sources", []))
+    print(provenance.get("activities", []))
+```
+
+Use provenance when answering source, lineage, generation, or audit questions. Use external data metadata to identify large source datasets that are intentionally not embedded in the package.
 
 ## Chart Access
 
@@ -580,6 +617,9 @@ doc.chart(id)
 doc.image(id)
 doc.annotation(id)
 doc.annotations()
+doc.external_data()
+doc.provenance()
+doc.relationships()
 doc.markdown(expand_tables=False)
 doc.query(sql)
 doc.to_agent_context(include_tables=True, include_layout=False)
@@ -615,6 +655,8 @@ TableSchema:
 
 ```python
 schema.id
+schema.primary_key
+schema.foreign_keys
 schema.columns
 schema.as_dict()
 ```
@@ -669,4 +711,3 @@ annotation.target()
 annotation.proposed_change()
 annotation.as_dict()
 ```
-

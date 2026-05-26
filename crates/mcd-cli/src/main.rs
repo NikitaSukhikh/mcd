@@ -79,12 +79,21 @@ enum Command {
         /// Emit table data.
         #[arg(long)]
         tables: bool,
+        /// Emit table schemas, keys, relationships, and units.
+        #[arg(long)]
+        schemas: bool,
         /// Emit image metadata.
         #[arg(long)]
         images: bool,
         /// Emit annotation metadata.
         #[arg(long)]
         annotations: bool,
+        /// Emit external data references.
+        #[arg(long)]
+        external_data: bool,
+        /// Emit package-level provenance metadata.
+        #[arg(long)]
+        provenance: bool,
         /// Filter annotation export by package page/path.
         #[arg(long)]
         page: Option<String>,
@@ -199,8 +208,11 @@ fn main() -> Result<()> {
             markdown,
             expand_tables,
             tables,
+            schemas,
             images,
             annotations,
+            external_data,
+            provenance,
             page,
             line,
             charts,
@@ -214,8 +226,11 @@ fn main() -> Result<()> {
                 markdown,
                 expand_tables,
                 tables,
+                schemas,
                 images,
                 annotations,
+                external_data,
+                provenance,
                 page: page.as_deref(),
                 line,
                 charts,

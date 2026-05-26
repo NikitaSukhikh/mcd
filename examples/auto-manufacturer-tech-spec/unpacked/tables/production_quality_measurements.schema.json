@@ -1,5 +1,8 @@
 {
   "id": "production_quality_measurements",
+  "primaryKey": [
+    "lot_id"
+  ],
   "columns": [
     {
       "name": "lot_id",
@@ -41,25 +44,41 @@
       "name": "torque_rework_ppm",
       "type": "integer",
       "label": "Torque Rework",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "ppm",
+        "label": "ppm"
+      }
     },
     {
       "name": "paint_defect_ppm",
       "type": "integer",
       "label": "Paint Defects",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "ppm",
+        "label": "ppm"
+      }
     },
     {
       "name": "gap_flush_mean_mm",
       "type": "decimal",
       "label": "Gap Flush Mean",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "mm",
+        "label": "mm"
+      }
     },
     {
       "name": "end_of_line_pass_rate_pct",
       "type": "decimal",
       "label": "End of Line Pass Rate",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      }
     },
     {
       "name": "water_leak_failures",
@@ -71,13 +90,21 @@
       "name": "battery_health_score_pct",
       "type": "decimal",
       "label": "Battery Health Score",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      }
     },
     {
       "name": "warranty_risk_index",
       "type": "decimal",
       "label": "Warranty Risk Index",
-      "nullable": false
+      "nullable": false,
+      "unit": {
+        "custom": true,
+        "label": "index points"
+      }
     },
     {
       "name": "release_status",

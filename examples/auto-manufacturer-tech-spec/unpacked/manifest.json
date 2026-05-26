@@ -48,5 +48,19 @@
         "default": "tables/production_quality_measurements.view.json"
       }
     }
-  ]
+  ],
+  "externalData": [
+    {
+      "id": "raw-auto-spec-source",
+      "uri": "https://example.com/datasets/orion-apex-motors/source-specification-export.csv",
+      "mediaType": "text/csv",
+      "description": "Synthetic raw engineering export used to derive the packaged vehicle, powertrain, battery, chassis, and production summary tables.",
+      "access": {
+        "requiresNetwork": true,
+        "requiresAuthentication": false,
+        "notes": "Illustrative external source declaration; the packaged CSV tables are the canonical data included in this example."
+      }
+    }
+  ],
+  "provenance": "provenance/provenance.json"
 }

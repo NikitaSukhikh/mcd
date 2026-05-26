@@ -5,8 +5,9 @@ use mcd_core::{
     McdPackage,
     annotations::{AnnotationMetadata, AnnotationTarget},
     export::{
-        AnnotationExport, annotation_export, chart_export, expanded_markdown_export, image_export,
-        json_export, original_markdown_export, table_export,
+        AnnotationExport, annotation_export, chart_export, expanded_markdown_export,
+        external_data_export, image_export, json_export, original_markdown_export,
+        provenance_export, schema_summary_export, table_export,
     },
 };
 use serde_json::json;
@@ -21,8 +22,11 @@ pub struct ExtractOptions<'a> {
     pub(crate) markdown: bool,
     pub(crate) expand_tables: bool,
     pub(crate) tables: bool,
+    pub(crate) schemas: bool,
     pub(crate) images: bool,
     pub(crate) annotations: bool,
+    pub(crate) external_data: bool,
+    pub(crate) provenance: bool,
     pub(crate) page: Option<&'a str>,
     pub(crate) line: Option<usize>,
     pub(crate) charts: bool,
@@ -35,8 +39,11 @@ pub fn run(file: &Path, options: ExtractOptions<'_>) -> Result<()> {
         markdown,
         expand_tables,
         tables,
+        schemas,
         images,
         annotations,
+        external_data,
+        provenance,
         page,
         line,
         charts,
@@ -45,13 +52,23 @@ pub fn run(file: &Path, options: ExtractOptions<'_>) -> Result<()> {
     let export_annotations = matches!(export, Some(ExportMode::Annotations));
     let annotations = annotations || export_annotations;
 
-    let modes = [json, markdown, tables, images, annotations, charts]
-        .into_iter()
-        .filter(|enabled| *enabled)
-        .count();
+    let modes = [
+        json,
+        markdown,
+        tables,
+        schemas,
+        images,
+        annotations,
+        external_data,
+        provenance,
+        charts,
+    ]
+    .into_iter()
+    .filter(|enabled| *enabled)
+    .count();
     if modes != 1 {
         bail!(
-            "choose exactly one extraction mode: --json, --markdown, --tables, --images, --annotations, or --charts"
+            "choose exactly one extraction mode: --json, --markdown, --tables, --schemas, --images, --annotations, --external-data, --provenance, or --charts"
         );
     }
     if expand_tables && !markdown {
@@ -88,10 +105,34 @@ pub fn run(file: &Path, options: ExtractOptions<'_>) -> Result<()> {
         return Ok(());
     }
 
+    if schemas {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&schema_summary_export(&package)?)?
+        );
+        return Ok(());
+    }
+
     if images {
         println!(
             "{}",
             serde_json::to_string_pretty(&image_export(&package)?)?
+        );
+        return Ok(());
+    }
+
+    if external_data {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&external_data_export(&package)?)?
+        );
+        return Ok(());
+    }
+
+    if provenance {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&provenance_export(&package)?)?
         );
         return Ok(());
     }

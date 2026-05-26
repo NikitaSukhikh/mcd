@@ -41,13 +41,13 @@ Decision: keep canonical measurement units constrained, but allow free-form unit
 - Source/provenance metadata may keep the original unit text exactly as extracted.
 - Raw CSV cells should remain typed data, not mixed number-and-unit strings, unless the schema column type is `string`.
 
-## 6. Version and Diff Model
+## 6. PAUSED, NOT IMPLEMENTED (NO NEED) Version and Diff Model
 
 Define stable revision metadata and patch/diff sidecars for controlled review workflows.
 
 Why: proposed changes and review decisions should be reproducible across package versions.
 
-## 7. Permission and Security Metadata
+## 7. PAUSED, NOT IMPLEMENTED (NO NEED) Permission and Security Metadata
 
 Add optional package metadata for classification, license, PII/PHI flags, retention, and allowed operations.
 

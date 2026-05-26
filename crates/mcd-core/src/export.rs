@@ -15,7 +15,7 @@ use crate::{
     images::{ImageMetadata, ImageRole},
     manifest::ExternalDataManifestEntry,
     provenance::{ProvenanceMetadata, load_manifest_provenance},
-    schema::{ColumnType, TableColumnSchema},
+    schema::{ColumnType, ForeignKeySchema, TableColumnSchema},
     table_view::{ChartEncoding, TableView, ViewColumn},
     tables::{DataTable, TableRow, TypedValue},
 };
@@ -66,6 +66,21 @@ pub struct ImageExport {
 pub struct AnnotationExport {
     /// Annotation metadata objects in manifest order.
     pub annotations: Vec<AnnotationMetadata>,
+}
+
+/// External data reference extraction export.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalDataExport {
+    /// External resources declared by the manifest.
+    pub external_data: Vec<ExternalDataManifestEntry>,
+}
+
+/// Provenance metadata extraction export.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProvenanceExport {
+    /// Package-level provenance metadata, if declared.
+    pub provenance: Option<ProvenanceMetadata>,
 }
 
 /// Loaded views for one table.
@@ -123,6 +138,12 @@ pub struct SchemaSummaryExport {
 pub struct TableSchemaSummary {
     /// Table id.
     pub table_id: String,
+    /// Columns that uniquely identify table rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub primary_key: Vec<String>,
+    /// Foreign-key relationships declared by the table schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foreign_keys: Vec<ForeignKeySchema>,
     /// Schema columns.
     pub columns: Vec<TableColumnSchema>,
 }
@@ -297,6 +318,21 @@ pub fn annotation_export(package: &McdPackage) -> crate::Result<AnnotationExport
     })
 }
 
+/// Build an external data reference export for a package.
+pub fn external_data_export(package: &McdPackage) -> crate::Result<ExternalDataExport> {
+    let manifest = package.manifest()?;
+    Ok(ExternalDataExport {
+        external_data: manifest.external_data,
+    })
+}
+
+/// Build a provenance metadata export for a package.
+pub fn provenance_export(package: &McdPackage) -> crate::Result<ProvenanceExport> {
+    let manifest = package.manifest()?;
+    let provenance = load_manifest_provenance(package, &manifest)?;
+    Ok(ProvenanceExport { provenance })
+}
+
 /// Build a chart metadata export for a package.
 pub fn chart_export(package: &McdPackage) -> crate::Result<ChartExport> {
     let manifest = package.manifest()?;
@@ -317,6 +353,8 @@ pub fn schema_summary_export(package: &McdPackage) -> crate::Result<SchemaSummar
             .filter_map(|entry| tables.get(&entry.id))
             .map(|table| TableSchemaSummary {
                 table_id: table.id.clone(),
+                primary_key: table.schema.primary_key.clone(),
+                foreign_keys: table.schema.foreign_keys.clone(),
                 columns: table.schema.columns.clone(),
             })
             .collect(),

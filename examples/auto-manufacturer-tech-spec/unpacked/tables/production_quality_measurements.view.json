@@ -33,25 +33,25 @@
       "name": "torque_rework_ppm",
       "label": "Torque Rework",
       "format": "number",
-      "unit": "ppm"
+      "unitLabel": "ppm"
     },
     {
       "name": "paint_defect_ppm",
       "label": "Paint Defects",
       "format": "number",
-      "unit": "ppm"
+      "unitLabel": "ppm"
     },
     {
       "name": "gap_flush_mean_mm",
       "label": "Gap Flush Mean",
       "format": "number",
-      "unit": "mm"
+      "unitLabel": "mm"
     },
     {
       "name": "end_of_line_pass_rate_pct",
       "label": "End of Line Pass Rate",
       "format": "number",
-      "unit": "%"
+      "unitLabel": "%"
     },
     {
       "name": "water_leak_failures",
@@ -62,7 +62,7 @@
       "name": "battery_health_score_pct",
       "label": "Battery Health Score",
       "format": "number",
-      "unit": "%"
+      "unitLabel": "%"
     },
     {
       "name": "warranty_risk_index",

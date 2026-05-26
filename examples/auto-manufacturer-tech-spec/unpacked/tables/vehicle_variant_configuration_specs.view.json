@@ -32,13 +32,13 @@
       "name": "wheelbase_mm",
       "label": "Wheelbase",
       "format": "number",
-      "unit": "mm"
+      "unitLabel": "mm"
     },
     {
       "name": "curb_mass_kg",
       "label": "Curb Mass",
       "format": "number",
-      "unit": "kg"
+      "unitLabel": "kg"
     },
     {
       "name": "drag_coefficient",
@@ -49,19 +49,19 @@
       "name": "frontal_area_m2",
       "label": "Frontal Area",
       "format": "number",
-      "unit": "m2"
+      "unitLabel": "m2"
     },
     {
       "name": "max_payload_kg",
       "label": "Max Payload",
       "format": "number",
-      "unit": "kg"
+      "unitLabel": "kg"
     },
     {
       "name": "tow_rating_kg",
       "label": "Tow Rating",
       "format": "number",
-      "unit": "kg"
+      "unitLabel": "kg"
     },
     {
       "name": "homologation_code",

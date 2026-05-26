@@ -1,0 +1,311 @@
+{
+  "sources": [
+    {
+      "id": "raw-auto-spec-source",
+      "uri": "https://example.com/datasets/orion-apex-motors/source-specification-export.csv",
+      "mediaType": "text/csv",
+      "title": "Orion Apex Motors source specification export",
+      "createdAt": "2026-05-26T00:00:00Z"
+    }
+  ],
+  "actors": [
+    {
+      "id": "example-maintainer",
+      "kind": "agent",
+      "name": "MCD example maintenance agent"
+    }
+  ],
+  "tools": [
+    {
+      "id": "mcd-example-generator",
+      "name": "MCD example generator",
+      "version": "0.1.0"
+    }
+  ],
+  "generatedAssets": [
+    {
+      "id": "main-md",
+      "path": "content/main.md",
+      "mediaType": "text/markdown",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "content-improvement-md",
+      "path": "content/Content_improvement.md",
+      "mediaType": "text/markdown",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-battery-pack-module-specs-csv",
+      "path": "tables/battery_pack_module_specs.csv",
+      "mediaType": "text/csv",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-battery-pack-module-specs-schema-json",
+      "path": "tables/battery_pack_module_specs.schema.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-battery-pack-module-specs-view-json",
+      "path": "tables/battery_pack_module_specs.view.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-chassis-brake-validation-specs-csv",
+      "path": "tables/chassis_brake_validation_specs.csv",
+      "mediaType": "text/csv",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-chassis-brake-validation-specs-schema-json",
+      "path": "tables/chassis_brake_validation_specs.schema.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-chassis-brake-validation-specs-view-json",
+      "path": "tables/chassis_brake_validation_specs.view.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-powertrain-calibration-specs-csv",
+      "path": "tables/powertrain_calibration_specs.csv",
+      "mediaType": "text/csv",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-powertrain-calibration-specs-schema-json",
+      "path": "tables/powertrain_calibration_specs.schema.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-powertrain-calibration-specs-view-json",
+      "path": "tables/powertrain_calibration_specs.view.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-production-quality-measurements-csv",
+      "path": "tables/production_quality_measurements.csv",
+      "mediaType": "text/csv",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-production-quality-measurements-schema-json",
+      "path": "tables/production_quality_measurements.schema.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-production-quality-measurements-view-json",
+      "path": "tables/production_quality_measurements.view.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-vehicle-variant-configuration-specs-csv",
+      "path": "tables/vehicle_variant_configuration_specs.csv",
+      "mediaType": "text/csv",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-vehicle-variant-configuration-specs-schema-json",
+      "path": "tables/vehicle_variant_configuration_specs.schema.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    },
+    {
+      "id": "tables-vehicle-variant-configuration-specs-view-json",
+      "path": "tables/vehicle_variant_configuration_specs.view.json",
+      "mediaType": "application/json",
+      "createdAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ]
+    }
+  ],
+  "activities": [
+    {
+      "id": "derive-example-package",
+      "kind": "transformed",
+      "startedAt": "2026-05-26T00:00:00Z",
+      "endedAt": "2026-05-26T00:05:00Z",
+      "sourceRefs": [
+        "raw-auto-spec-source"
+      ],
+      "toolRefs": [
+        "mcd-example-generator"
+      ],
+      "actorRefs": [
+        "example-maintainer"
+      ],
+      "inputRefs": [
+        "source:raw-auto-spec-source",
+        "externalData:raw-auto-spec-source"
+      ],
+      "outputRefs": [
+        "table:vehicle_variant_configuration_specs",
+        "table:powertrain_calibration_specs",
+        "table:battery_pack_module_specs",
+        "table:chassis_brake_validation_specs",
+        "table:production_quality_measurements"
+      ],
+      "description": "Generated the packaged Markdown and CSV-backed table sidecars from the synthetic raw engineering export."
+    }
+  ]
+}
