@@ -111,6 +111,46 @@
       "type": "string",
       "label": "Release Status",
       "nullable": false
+    },
+    {
+      "name": "cpk_min",
+      "type": "decimal",
+      "label": "Minimum Cpk",
+      "nullable": false
+    },
+    {
+      "name": "ppk_min",
+      "type": "decimal",
+      "label": "Minimum Ppk",
+      "nullable": false
+    },
+    {
+      "name": "msa_grr_pct",
+      "type": "decimal",
+      "label": "MSA GRR",
+      "nullable": false,
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      }
+    },
+    {
+      "name": "ppap_status",
+      "type": "string",
+      "label": "PPAP Status",
+      "nullable": false
+    },
+    {
+      "name": "containment_status",
+      "type": "string",
+      "label": "Containment Status",
+      "nullable": false
+    },
+    {
+      "name": "supplier_lot_traceability",
+      "type": "string",
+      "label": "Supplier Lot Traceability",
+      "nullable": false
     }
   ]
 }

@@ -77,6 +77,30 @@
     {
       "name": "bms_firmware_version",
       "label": "BMS Firmware Version"
+    },
+    {
+      "name": "usable_capacity_kwh",
+      "label": "Usable Capacity",
+      "format": "number",
+      "unitLabel": "kWh"
+    },
+    {
+      "name": "cell_nominal_voltage_v",
+      "label": "Cell Nominal Voltage",
+      "format": "number",
+      "unitLabel": "V"
+    },
+    {
+      "name": "battery_heat_rejection_kw",
+      "label": "Battery Heat Rejection",
+      "format": "number",
+      "unitLabel": "kW"
+    },
+    {
+      "name": "thermal_derate_start_c",
+      "label": "Thermal Derate Start",
+      "format": "number",
+      "unitLabel": "deg C"
     }
   ]
 }

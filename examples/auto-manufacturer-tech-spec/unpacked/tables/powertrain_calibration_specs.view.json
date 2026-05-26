@@ -55,7 +55,7 @@
     },
     {
       "name": "wltp_co2_g_per_km",
-      "label": "WLTP CO2",
+      "label": "Cycle CO2",
       "format": "number",
       "unitLabel": "g/km"
     },
@@ -73,6 +73,18 @@
       "name": "production_release_date",
       "label": "Production Release Date",
       "format": "date"
+    },
+    {
+      "name": "propulsion_type",
+      "label": "Propulsion Type"
+    },
+    {
+      "name": "emissions_certification_basis",
+      "label": "Emissions Certification Basis"
+    },
+    {
+      "name": "obd_standard",
+      "label": "OBD Standard"
     }
   ]
 }

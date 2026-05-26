@@ -77,6 +77,28 @@
       "name": "validation_date",
       "label": "Validation Date",
       "format": "date"
+    },
+    {
+      "name": "regulatory_brake_pass",
+      "label": "Regulatory Brake Pass"
+    },
+    {
+      "name": "fade_test_pass",
+      "label": "Fade Test Pass"
+    },
+    {
+      "name": "gcwr_stop_distance_m",
+      "label": "GCWR Stop Distance",
+      "format": "number",
+      "unitLabel": "m"
+    },
+    {
+      "name": "trailer_stability_pass",
+      "label": "Trailer Stability Pass"
+    },
+    {
+      "name": "grade_launch_pass",
+      "label": "Grade Launch Pass"
     }
   ]
 }

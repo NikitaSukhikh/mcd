@@ -136,6 +136,40 @@
       "type": "date",
       "label": "Validation Date",
       "nullable": false
+    },
+    {
+      "name": "regulatory_brake_pass",
+      "type": "boolean",
+      "label": "Regulatory Brake Pass",
+      "nullable": false
+    },
+    {
+      "name": "fade_test_pass",
+      "type": "boolean",
+      "label": "Fade Test Pass",
+      "nullable": false
+    },
+    {
+      "name": "gcwr_stop_distance_m",
+      "type": "decimal",
+      "label": "GCWR Stop Distance",
+      "nullable": false,
+      "unit": {
+        "code": "m",
+        "label": "m"
+      }
+    },
+    {
+      "name": "trailer_stability_pass",
+      "type": "boolean",
+      "label": "Trailer Stability Pass",
+      "nullable": false
+    },
+    {
+      "name": "grade_launch_pass",
+      "type": "boolean",
+      "label": "Grade Launch Pass",
+      "nullable": false
     }
   ]
 }

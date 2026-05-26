@@ -72,6 +72,34 @@
     {
       "name": "release_status",
       "label": "Release Status"
+    },
+    {
+      "name": "cpk_min",
+      "label": "Minimum Cpk",
+      "format": "number"
+    },
+    {
+      "name": "ppk_min",
+      "label": "Minimum Ppk",
+      "format": "number"
+    },
+    {
+      "name": "msa_grr_pct",
+      "label": "MSA GRR",
+      "format": "number",
+      "unitLabel": "%"
+    },
+    {
+      "name": "ppap_status",
+      "label": "PPAP Status"
+    },
+    {
+      "name": "containment_status",
+      "label": "Containment Status"
+    },
+    {
+      "name": "supplier_lot_traceability",
+      "label": "Supplier Lot Traceability"
     }
   ]
 }

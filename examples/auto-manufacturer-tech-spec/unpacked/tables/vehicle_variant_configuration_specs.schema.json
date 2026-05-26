@@ -107,6 +107,54 @@
       "type": "boolean",
       "label": "Active Aero",
       "nullable": false
+    },
+    {
+      "name": "certification_market",
+      "type": "string",
+      "label": "Certification Market",
+      "nullable": false
+    },
+    {
+      "name": "test_cycle",
+      "type": "string",
+      "label": "Test Cycle",
+      "nullable": false
+    },
+    {
+      "name": "procedure_standard",
+      "type": "string",
+      "label": "Procedure Standard",
+      "nullable": false
+    },
+    {
+      "name": "gcwr_kg",
+      "type": "integer",
+      "label": "GCWR",
+      "nullable": false,
+      "unit": {
+        "code": "kg",
+        "label": "kg"
+      }
+    },
+    {
+      "name": "braked_trailer_rating_kg",
+      "type": "integer",
+      "label": "Braked Trailer Rating",
+      "nullable": false,
+      "unit": {
+        "code": "kg",
+        "label": "kg"
+      }
+    },
+    {
+      "name": "unbraked_trailer_rating_kg",
+      "type": "integer",
+      "label": "Unbraked Trailer Rating",
+      "nullable": false,
+      "unit": {
+        "code": "kg",
+        "label": "kg"
+      }
     }
   ]
 }

@@ -70,6 +70,36 @@
     {
       "name": "active_aero",
       "label": "Active Aero"
+    },
+    {
+      "name": "certification_market",
+      "label": "Certification Market"
+    },
+    {
+      "name": "test_cycle",
+      "label": "Test Cycle"
+    },
+    {
+      "name": "procedure_standard",
+      "label": "Procedure Standard"
+    },
+    {
+      "name": "gcwr_kg",
+      "label": "GCWR",
+      "format": "number",
+      "unitLabel": "kg"
+    },
+    {
+      "name": "braked_trailer_rating_kg",
+      "label": "Braked Trailer Rating",
+      "format": "number",
+      "unitLabel": "kg"
+    },
+    {
+      "name": "unbraked_trailer_rating_kg",
+      "label": "Unbraked Trailer Rating",
+      "format": "number",
+      "unitLabel": "kg"
     }
   ]
 }
