@@ -151,7 +151,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
             archive: mcd-cli-linux-arm64.tar.gz
             cross: true
-          - os: macos-13
+          - os: macos-15-intel
             artifact: macos-x64
             target: x86_64-apple-darwin
             archive: mcd-cli-macos-x64.tar.gz
@@ -201,6 +201,7 @@ jobs:
           "$hash  ${{ matrix.archive }}" | Set-Content -NoNewline -Encoding ascii "${{ matrix.archive }}.sha256"
       - uses: softprops/action-gh-release@v2
         with:
+          overwrite_files: true
           files: |
             ${{ matrix.archive }}
             ${{ matrix.archive }}.sha256
@@ -222,7 +223,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
             archive: mcd-mcp-linux-arm64.tar.gz
             cross: true
-          - os: macos-13
+          - os: macos-15-intel
             artifact: macos-x64
             target: x86_64-apple-darwin
             archive: mcd-mcp-macos-x64.tar.gz
@@ -272,6 +273,7 @@ jobs:
           "$hash  ${{ matrix.archive }}" | Set-Content -NoNewline -Encoding ascii "${{ matrix.archive }}.sha256"
       - uses: softprops/action-gh-release@v2
         with:
+          overwrite_files: true
           files: |
             ${{ matrix.archive }}
             ${{ matrix.archive }}.sha256
