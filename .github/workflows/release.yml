@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish-rust:
     name: Publish Rust
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +40,7 @@ jobs:
 
   python-wheels:
     name: Python wheel (${{ matrix.artifact }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -81,6 +83,7 @@ jobs:
 
   publish-python:
     name: Publish Python
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: python-wheels
     environment: pypi
@@ -108,6 +111,7 @@ jobs:
 
   publish-typescript:
     name: Publish TypeScript
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
