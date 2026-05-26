@@ -57,6 +57,7 @@ pub fn pdf_to_mcd_bytes(pdf: &[u8], options: PdfConversionOptions) -> crate::Res
             id: Some("source-pdf".to_owned()),
             path: asset_path.clone(),
         }],
+        external_data: Vec::new(),
         layout: None::<LayoutManifestEntry>,
     };
 

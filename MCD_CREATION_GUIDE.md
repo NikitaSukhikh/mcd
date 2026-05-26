@@ -197,12 +197,29 @@ Optional conformance claims are `MCD-Core`, `MCD-Images`, `MCD-Charts`, and `MCD
       "metadata": "annotations/review-note.annotation.json"
     }
   ],
+  "externalData": [
+    {
+      "id": "raw-sensor-log",
+      "uri": "https://example.com/datasets/raw-sensor-log.csv",
+      "mediaType": "text/csv",
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 1048576,
+      "description": "Raw sensor log used to derive the summarized package tables.",
+      "access": {
+        "requiresNetwork": true,
+        "requiresAuthentication": false,
+        "notes": "Public HTTPS dataset."
+      }
+    }
+  ],
   "layout": {
     "styles": "layout/styles.json",
     "pageMap": "layout/page-map.json"
   }
 }
 ```
+
+Use `externalData` for large or governed datasets that should not be stored inside the `.mcd` archive. The validator checks declaration shape only; it does not fetch external resources. Use absolute `http`, `https`, `s3`, `gs`, `file`, or `ipfs` URIs. Add a `sha256:` hash when deterministic retrieval matters.
 
 Do not declare a table, image, annotation, asset, or layout path unless the corresponding file exists.
 

@@ -13,6 +13,7 @@ use crate::{
     document::{AnnotationRef, DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
     images::{ImageMetadata, ImageRole},
+    manifest::ExternalDataManifestEntry,
     schema::{ColumnType, TableColumnSchema},
     table_view::{ChartEncoding, TableView, ViewColumn},
     tables::{DataTable, TableRow, TypedValue},
@@ -145,6 +146,9 @@ pub struct AgentContextExport {
     /// Review annotations and proposed changes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotations: Vec<AnnotationMetadata>,
+    /// External data resources referenced by this package.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_data: Vec<ExternalDataManifestEntry>,
 }
 
 /// Agent context for one chart placement.
@@ -352,6 +356,7 @@ pub fn agent_context_export(package: &McdPackage) -> crate::Result<AgentContextE
             })
             .collect(),
         annotations: annotations.into_values().collect(),
+        external_data: manifest.external_data,
     })
 }
 

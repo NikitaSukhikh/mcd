@@ -36,6 +36,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/asset" }
     },
+    "externalData": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/externalData" }
+    },
     "layout": { "$ref": "#/$defs/layout" }
   },
   "$defs": {
@@ -92,6 +96,33 @@
         "id": { "$ref": "#/$defs/id" },
         "path": { "$ref": "#/$defs/packagePath" }
       }
+    },
+    "externalData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "uri", "mediaType"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "uri": { "type": "string", "format": "uri", "minLength": 1 },
+        "mediaType": { "type": "string", "pattern": "^[^\\s/]+/[^\\s]+$" },
+        "hash": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "description": { "type": "string", "minLength": 1 },
+        "access": { "$ref": "#/$defs/externalAccess" }
+      }
+    },
+    "externalAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requiresNetwork": { "type": "boolean" },
+        "requiresAuthentication": { "type": "boolean" },
+        "notes": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "layout": {
       "type": "object",

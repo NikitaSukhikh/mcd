@@ -121,7 +121,7 @@ caption: Revenue by quarter
 :::
 ```
 
-Images and annotations are also stored as package metadata and assets, then referenced from Markdown or the manifest.
+Images and annotations are also stored as package metadata and assets, then referenced from Markdown or the manifest. Large datasets that should not live inside the package can be declared in manifest `externalData` with an absolute URI, media type, optional `sha256:` hash, optional size, and access notes.
 
 ## Common Workflows
 
@@ -188,7 +188,7 @@ Example:
 mcd inspect examples/minimal/minimal.mcd
 ```
 
-Output includes the format, version, profile, entrypoint path, table count, annotation count, and package entry count.
+Output includes the format, version, profile, entrypoint path, table count, annotation count, external data count, and package entry count.
 
 ### `mcd validate`
 

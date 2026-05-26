@@ -370,6 +370,7 @@ mod tests {
             images: Vec::new(),
             annotations: Vec::new(),
             assets: Vec::new(),
+            external_data: Vec::new(),
             layout: None,
         };
 

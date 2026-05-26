@@ -16,6 +16,7 @@ pub fn run(file: &Path) -> Result<()> {
         "entrypoint": manifest.entrypoint,
         "tables": manifest.tables.len(),
         "annotations": manifest.annotations.len(),
+        "externalData": manifest.external_data.len(),
         "entries": entry_count,
     });
 
