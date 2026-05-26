@@ -114,6 +114,25 @@ enum Command {
         #[arg(long, value_enum, default_value_t = QueryOutputFormat::Table)]
         format: QueryOutputFormat,
     },
+    /// Search package content and metadata.
+    Search {
+        /// Package file to search.
+        file: PathBuf,
+        /// Search query.
+        query: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = SearchOutputFormat::Text)]
+        format: SearchOutputFormat,
+        /// Maximum result count.
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Filter by indexed content kind.
+        #[arg(long, value_enum)]
+        kind: Option<SearchKindArg>,
+        /// Filter by internal package path/page.
+        #[arg(long)]
+        page: Option<String>,
+    },
     /// Run multiple read-only SQL queries against one loaded package.
     QueryBatch {
         /// Package file to query.
@@ -186,6 +205,21 @@ enum QueryOutputFormat {
 }
 
 #[derive(Clone, Debug, ValueEnum)]
+enum SearchOutputFormat {
+    Text,
+    Json,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum SearchKindArg {
+    Markdown,
+    Schema,
+    Manifest,
+    Annotation,
+    Provenance,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
 enum ToolsOutputFormat {
     Text,
     Json,
@@ -251,6 +285,32 @@ fn main() -> Result<()> {
                 QueryOutputFormat::Table => commands::query::OutputFormat::Table,
                 QueryOutputFormat::Json => commands::query::OutputFormat::Json,
                 QueryOutputFormat::Csv => commands::query::OutputFormat::Csv,
+            },
+        ),
+        Command::Search {
+            file,
+            query,
+            format,
+            limit,
+            kind,
+            page,
+        } => commands::search::run(
+            &file,
+            &query,
+            commands::search::SearchCommandOptions {
+                format: match format {
+                    SearchOutputFormat::Text => commands::search::OutputFormat::Text,
+                    SearchOutputFormat::Json => commands::search::OutputFormat::Json,
+                },
+                limit,
+                kind: kind.map(|kind| match kind {
+                    SearchKindArg::Markdown => mcd_core::SearchKind::Markdown,
+                    SearchKindArg::Schema => mcd_core::SearchKind::Schema,
+                    SearchKindArg::Manifest => mcd_core::SearchKind::Manifest,
+                    SearchKindArg::Annotation => mcd_core::SearchKind::Annotation,
+                    SearchKindArg::Provenance => mcd_core::SearchKind::Provenance,
+                }),
+                page,
             },
         ),
         Command::QueryBatch { file, sql } => commands::query::run_batch(&file, &sql),

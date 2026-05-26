@@ -37,6 +37,9 @@ cargo install mcd-mcp --version 0.1.0-alpha.1
 mcd-mcp --transport stdio
 ```
 
+Prebuilt `mcd-mcp-*` archives are also attached to GitHub Releases for users
+who do not have Cargo installed.
+
 To install the CLI locally from the checkout:
 
 ```bash

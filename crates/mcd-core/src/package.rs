@@ -13,6 +13,7 @@ use zip::ZipArchive;
 use crate::{
     errors::{Diagnostic, McdError, Result},
     manifest::Manifest,
+    search::{SearchHit, SearchOptions},
 };
 
 /// Required MCD package media type.
@@ -186,6 +187,11 @@ impl McdPackage {
             }
         })?;
         Manifest::from_slice(bytes)
+    }
+
+    /// Search package content and metadata with the built-in BM25 index.
+    pub fn search(&self, query: &str, options: SearchOptions) -> Result<Vec<SearchHit>> {
+        crate::search::search_package(self, query, options)
     }
 
     /// Validate the root `mimetype` entry.

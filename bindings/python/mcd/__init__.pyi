@@ -125,6 +125,13 @@ class Document:
     def markdown(self, expand_tables: bool = False) -> str: ...
     def query(self, sql: str) -> QueryResult: ...
     def queries(self, sql: list[str]) -> list[QueryResult]: ...
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        kind: str | None = None,
+        page: str | None = None,
+    ) -> list[dict[str, Any]]: ...
     def to_agent_context(
         self,
         include_tables: bool = True,
@@ -135,6 +142,13 @@ class Document:
 def open(path: str | Path) -> Document: ...
 def query(path: str | Path, sql: str) -> QueryResult: ...
 def queries(path: str | Path, sql: list[str]) -> list[QueryResult]: ...
+def search(
+    path: str | Path,
+    query: str,
+    limit: int = 10,
+    kind: str | None = None,
+    page: str | None = None,
+) -> list[dict[str, Any]]: ...
 def convert_pdf(
     input: str | Path,
     output: str | Path,

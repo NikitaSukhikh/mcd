@@ -32,9 +32,11 @@ until `mcd-core` exists in the registry.
 
 ```bash
 cargo publish --manifest-path crates/mcd-core/Cargo.toml
+cargo publish --manifest-path crates/mcd-query/Cargo.toml
 cargo publish --manifest-path crates/mcd-render/Cargo.toml
 cargo publish --manifest-path crates/mcd-wasm/Cargo.toml
 cargo publish --manifest-path crates/mcd-cli/Cargo.toml
+cargo publish --manifest-path crates/mcd-mcp/Cargo.toml
 ```
 
 ## Publish TypeScript
@@ -117,8 +119,8 @@ git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
-The tag workflow uploads Windows, macOS, and Linux CLI binaries to the GitHub
-Release.
+The tag workflow uploads Windows, macOS, and Linux CLI and MCP server binaries
+to the GitHub Release.
 
 CLI archives are built for:
 
@@ -129,5 +131,15 @@ CLI archives are built for:
 | macOS x64 | `mcd-cli-macos-x64.tar.gz` |
 | macOS arm64 | `mcd-cli-macos-arm64.tar.gz` |
 | Windows x64 | `mcd-cli-windows-x64.zip` |
+
+MCP server archives are built for:
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `mcd-mcp-linux-x64.tar.gz` |
+| Linux arm64 | `mcd-mcp-linux-arm64.tar.gz` |
+| macOS x64 | `mcd-mcp-macos-x64.tar.gz` |
+| macOS arm64 | `mcd-mcp-macos-arm64.tar.gz` |
+| Windows x64 | `mcd-mcp-windows-x64.zip` |
 
 Each archive is uploaded with a matching `.sha256` checksum file.

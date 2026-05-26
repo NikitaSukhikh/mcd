@@ -159,6 +159,30 @@ def test_sql_queries_api() -> None:
         doc.queries(["select count(*) from revenue", "delete from revenue"])
 
 
+def test_search_api() -> None:
+    doc = mcd.open(example("auto-manufacturer-tech-spec"))
+
+    hits = doc.search("thermal_limit_deg_c coolant V50D", limit=5)
+    assert any(
+        hit["kind"] == "markdown"
+        and hit["path"] == "content/main.md"
+        and "thermal_limit_deg_c" in hit["text"]
+        for hit in hits
+    )
+
+    schema_hits = mcd.search(
+        example("auto-manufacturer-tech-spec"),
+        "variant_id",
+        kind="schema",
+        limit=5,
+    )
+    assert schema_hits
+    assert all(hit["kind"] == "schema" for hit in schema_hits)
+
+    with pytest.raises(ValueError, match="kind must be one of"):
+        doc.search("variant_id", kind="rows")
+
+
 def test_sql_schema_metadata_tables() -> None:
     doc = mcd.open(example("auto-manufacturer-tech-spec"))
 

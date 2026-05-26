@@ -13,6 +13,7 @@ pub mod package;
 pub mod pdf;
 pub mod provenance;
 pub mod schema;
+pub mod search;
 pub mod table_view;
 pub mod tables;
 pub mod validate;
@@ -20,6 +21,7 @@ pub mod validate;
 pub use errors::{Diagnostic, McdError, Result};
 pub use manifest::Manifest;
 pub use package::McdPackage;
+pub use search::{SearchHit, SearchKind, SearchOptions, search_package};
 pub use validate::ValidationResult;
 
 #[cfg(test)]

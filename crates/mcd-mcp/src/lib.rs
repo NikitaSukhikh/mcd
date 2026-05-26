@@ -19,6 +19,7 @@ use mcd_core::{
     },
     package::{MCD_MIMETYPE, validate_internal_path},
     pdf::{PdfConversionOptions, pdf_to_mcd_bytes},
+    search::{SearchKind, SearchOptions},
     validate::validate_package,
 };
 use serde::{Deserialize, Serialize};
@@ -177,6 +178,7 @@ fn call_tool(name: &str, arguments: Value) -> Result<Value> {
         "mcd_markdown" => mcd_markdown(arguments),
         "mcd_query" => mcd_query(arguments),
         "mcd_queries" => mcd_queries(arguments),
+        "mcd_search" => mcd_search(arguments),
         "mcd_table" => mcd_table(arguments),
         "mcd_schemas" => mcd_schemas(arguments),
         "mcd_chart" => mcd_chart(arguments),
@@ -287,13 +289,32 @@ fn tools() -> Vec<ToolSpec> {
         ),
         tool(
             "mcd_queries",
-            "Run multiple read-only SQL queries against one package-loaded SQLite database.",
+            "Run multiple read-only SQL queries against one package.",
             object_schema(
                 &[
                     required_string("path", "Path to the .mcd package."),
                     array_prop("queries", "Read-only SELECT or WITH queries."),
                 ],
                 &["path", "queries"],
+            ),
+        ),
+        tool(
+            "mcd_search",
+            "Search package Markdown, schemas, manifest metadata, annotations, and provenance with BM25.",
+            object_schema(
+                &[
+                    required_string("path", "Path to the .mcd package."),
+                    required_string("query", "Search query."),
+                    integer_prop("limit", "Maximum number of hits."),
+                    enum_prop(
+                        "kind",
+                        &["markdown", "schema", "manifest", "annotation", "provenance"],
+                        "Optional indexed content kind filter.",
+                        "markdown",
+                    ),
+                    string_prop("page", "Optional internal package path/page filter."),
+                ],
+                &["path", "query"],
             ),
         ),
         tool(
@@ -613,20 +634,36 @@ fn mcd_queries(arguments: Value) -> Result<Value> {
     let path = required_path(&arguments, "path")?;
     let queries = required_string_array_arg(&arguments, "queries")?;
     let package = McdPackage::open_path(&path)?;
-    let results = mcd_query::query_package_many(&package, &queries)?;
     let queries = queries
         .into_iter()
-        .zip(results)
-        .map(|(sql, result)| {
-            json!({
+        .map(|sql| {
+            let result = mcd_query::query_package(&package, &sql)?;
+            Ok(json!({
                 "sql": sql,
                 "result": result.as_json(),
-            })
+            }))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     Ok(json!({
         "queryCount": queries.len(),
         "queries": queries,
+    }))
+}
+
+fn mcd_search(arguments: Value) -> Result<Value> {
+    let path = required_path(&arguments, "path")?;
+    let query = required_string_arg(&arguments, "query")?;
+    let limit = optional_usize_arg(&arguments, "limit")?.unwrap_or(10);
+    let kind = string_arg(&arguments, "kind")?
+        .as_deref()
+        .map(parse_search_kind)
+        .transpose()?;
+    let page = string_arg(&arguments, "page")?;
+    let package = McdPackage::open_path(&path)?;
+    let hits = package.search(&query, SearchOptions { limit, kind, page })?;
+    Ok(json!({
+        "hits": hits,
+        "count": hits.len(),
     }))
 }
 
@@ -853,7 +890,10 @@ fn mcd_add_annotation(arguments: Value) -> Result<Value> {
         .filter(|entry| *entry != "manifest.json")
         .map(|entry| Ok((entry.to_owned(), package.read(entry)?.to_vec())))
         .collect::<std::result::Result<Vec<_>, mcd_core::McdError>>()?;
-    entries.push(("manifest.json".to_owned(), serde_json::to_vec_pretty(&manifest)?));
+    entries.push((
+        "manifest.json".to_owned(),
+        serde_json::to_vec_pretty(&manifest)?,
+    ));
     entries.push((
         metadata_path.clone(),
         serde_json::to_vec_pretty(&annotation)?,
@@ -932,6 +972,12 @@ fn optional_usize_arg(arguments: &Value, name: &str) -> Result<Option<usize>> {
         Some(Value::Null) | None => Ok(None),
         Some(_) => bail!("{name} must be a non-negative integer"),
     }
+}
+
+fn parse_search_kind(value: &str) -> Result<SearchKind> {
+    SearchKind::parse(value).ok_or_else(|| {
+        anyhow!("kind must be one of: markdown, schema, manifest, annotation, provenance")
+    })
 }
 
 fn retain_by_id(export: &mut Value, collection: &str, field: &str, id: &str) -> Result<()> {
@@ -1296,6 +1342,12 @@ mod tests {
         assert!(tools.iter().any(|tool| tool["name"] == "mcd_validate"));
         assert!(tools.iter().any(|tool| tool["name"] == "mcd_query"));
         assert!(tools.iter().any(|tool| tool["name"] == "mcd_queries"));
+        assert!(tools.iter().any(|tool| tool["name"] == "mcd_search"));
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool["name"] == "mcd_add_annotation")
+        );
         assert!(tools.iter().any(|tool| tool["name"] == "mcd_pack"));
     }
 
@@ -1373,6 +1425,66 @@ mod tests {
         );
     }
 
+    #[test]
+    fn calls_search_tool_against_example_package() {
+        let response = tool_call(
+            "mcd_search",
+            json!({
+                "path": example_package("auto-manufacturer-tech-spec"),
+                "query": "thermal_limit_deg_c coolant V50D",
+                "limit": 5,
+            }),
+        );
+        let hits = response["result"]["structuredContent"]["hits"]
+            .as_array()
+            .expect("hits");
+        assert!(hits.iter().any(|hit| {
+            hit["kind"] == "markdown"
+                && hit["path"] == "content/main.md"
+                && hit["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("thermal_limit_deg_c"))
+        }));
+    }
+
+    #[test]
+    fn adds_annotation_to_package_copy() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let package = temp_dir.join("minimal.mcd");
+        fs::copy(example_package("minimal"), &package).expect("copy fixture");
+
+        let response = tool_call(
+            "mcd_add_annotation",
+            json!({
+                "path": package,
+                "text": "Review this line.",
+                "page": "content/main.md",
+                "line": 1,
+                "id": "review-line",
+            }),
+        );
+
+        assert_eq!(
+            response["result"]["structuredContent"]["id"],
+            json!("review-line")
+        );
+
+        let annotations = tool_call(
+            "mcd_annotations",
+            json!({
+                "path": package,
+                "annotationId": "review-line",
+            }),
+        );
+        assert_eq!(
+            annotations["result"]["structuredContent"]["annotations"][0]["body"],
+            json!("Review this line.")
+        );
+
+        fs::remove_dir_all(temp_dir).ok();
+    }
+
     fn tool_call(name: &str, arguments: Value) -> Value {
         let request = json!({
             "jsonrpc": "2.0",
@@ -1395,5 +1507,13 @@ mod tests {
             .join(format!("{name}.mcd"))
             .display()
             .to_string()
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("mcd-mcp-test-{}-{nonce}", std::process::id()))
     }
 }

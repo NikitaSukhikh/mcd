@@ -31,6 +31,16 @@ Prebuilt CLI archives are published for:
 
 Each archive is published with a matching `.sha256` checksum file.
 
+Prebuilt MCP server archives are published for the same platforms:
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `mcd-mcp-linux-x64.tar.gz` |
+| Linux arm64 | `mcd-mcp-linux-arm64.tar.gz` |
+| macOS x64 | `mcd-mcp-macos-x64.tar.gz` |
+| macOS arm64 | `mcd-mcp-macos-arm64.tar.gz` |
+| Windows x64 | `mcd-mcp-windows-x64.zip` |
+
 Verify:
 
 ```bash
@@ -73,7 +83,8 @@ the CLI section.
 The official MCP server is published as the Rust `mcd-mcp` binary. It exposes
 MCD package validation, inspection, agent context, Markdown extraction, SQL
 querying, table/chart/image/annotation metadata, rendering, packing,
-unpacking, initialization, and PDF conversion tools to MCP-capable agents.
+unpacking, initialization, annotation creation, and PDF conversion tools to
+MCP-capable agents.
 
 ```bash
 cargo install mcd-mcp --version 0.1.0-alpha.1
@@ -85,6 +96,10 @@ From a source checkout:
 ```bash
 cargo run -p mcd-mcp -- --transport stdio
 ```
+
+Without Cargo, download the matching `mcd-mcp-*` archive from the GitHub
+Release, extract the binary locally, and point your MCP client at that local
+executable path.
 
 Example local MCP client configuration:
 

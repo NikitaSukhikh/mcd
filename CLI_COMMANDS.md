@@ -44,7 +44,7 @@ python -m mcd.mcp_server
 The official MCP server exposes validation, inspection, agent context, Markdown
 extraction, SQL querying, table/chart/image/annotation metadata, relationships,
 external data, provenance, rendering, packing, unpacking, initialization, and
-PDF conversion tools.
+annotation creation, and PDF conversion tools.
 
 ## Quick Render
 

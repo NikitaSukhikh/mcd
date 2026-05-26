@@ -23,11 +23,17 @@ jobs:
       - run: cargo publish --manifest-path crates/mcd-render/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+      - run: cargo publish --manifest-path crates/mcd-query/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
       - run: cargo publish --manifest-path crates/mcd-wasm/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
       - run: sleep 60
       - run: cargo publish --manifest-path crates/mcd-cli/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+      - run: cargo publish --manifest-path crates/mcd-mcp/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
@@ -184,6 +190,77 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: Compress-Archive -Path target/${{ matrix.target }}/release/mcd.exe -DestinationPath ${{ matrix.archive }}
+      - name: Write checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path "${{ matrix.archive }}").Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.archive }}" | Set-Content -NoNewline -Encoding ascii "${{ matrix.archive }}.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  mcp-binaries:
+    name: MCP binary (${{ matrix.artifact }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x64
+            target: x86_64-unknown-linux-gnu
+            archive: mcd-mcp-linux-x64.tar.gz
+            cross: false
+          - os: ubuntu-latest
+            artifact: linux-arm64
+            target: aarch64-unknown-linux-gnu
+            archive: mcd-mcp-linux-arm64.tar.gz
+            cross: true
+          - os: macos-13
+            artifact: macos-x64
+            target: x86_64-apple-darwin
+            archive: mcd-mcp-macos-x64.tar.gz
+            cross: false
+          - os: macos-latest
+            artifact: macos-arm64
+            target: aarch64-apple-darwin
+            archive: mcd-mcp-macos-arm64.tar.gz
+            cross: false
+          - os: windows-latest
+            artifact: windows-x64
+            target: x86_64-pc-windows-msvc
+            archive: mcd-mcp-windows-x64.zip
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Set up QEMU
+        if: matrix.cross
+        uses: docker/setup-qemu-action@v3
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build MCP server
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release -p mcd-mcp --target "${{ matrix.target }}"
+          else
+            cargo build --release -p mcd-mcp --target "${{ matrix.target }}"
+          fi
+      - name: Archive Unix binary
+        if: matrix.os != 'windows-latest'
+        run: tar -czf ${{ matrix.archive }} -C target/${{ matrix.target }}/release mcd-mcp
+      - name: Archive Windows binary
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/mcd-mcp.exe -DestinationPath ${{ matrix.archive }}
       - name: Write checksum
         shell: pwsh
         run: |

@@ -351,6 +351,50 @@ fn query_runs_read_only_sql_against_package_tables() {
 }
 
 #[test]
+fn search_finds_markdown_and_schema_hits() {
+    let auto = example_package("auto-manufacturer-tech-spec");
+
+    let output = run(mcd()
+        .arg("search")
+        .arg(&auto)
+        .arg("thermal_limit_deg_c coolant V50D")
+        .arg("--format")
+        .arg("json")
+        .arg("--limit")
+        .arg("5"));
+    assert!(output.status.success(), "{}", stderr(&output));
+    let hits: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("search json");
+    let hits = hits.as_array().expect("hits array");
+    assert!(hits.iter().any(|hit| {
+        hit["kind"] == "markdown"
+            && hit["path"] == "content/main.md"
+            && hit["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("thermal_limit_deg_c"))
+    }));
+
+    let schema = run(mcd()
+        .arg("search")
+        .arg(&auto)
+        .arg("variant_id")
+        .arg("--kind")
+        .arg("schema")
+        .arg("--format")
+        .arg("json")
+        .arg("--limit")
+        .arg("5"));
+    assert!(schema.status.success(), "{}", stderr(&schema));
+    let schema_hits: serde_json::Value =
+        serde_json::from_str(&stdout(&schema)).expect("schema search json");
+    assert!(schema_hits.as_array().expect("schema hits").iter().all(|hit| {
+        hit["kind"] == "schema"
+            && hit["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with(".schema.json"))
+    }));
+}
+
+#[test]
 fn tools_lists_python_sql_and_optional_package_schema() {
     let generic = run(mcd().arg("tools"));
     assert!(generic.status.success(), "{}", stderr(&generic));

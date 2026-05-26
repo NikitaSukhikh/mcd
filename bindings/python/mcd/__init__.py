@@ -17,6 +17,7 @@ from ._native import (
     pdf_to_mcd_bytes,
     queries,
     query,
+    search,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "pdf_to_mcd_bytes",
     "queries",
     "query",
+    "search",
 ]

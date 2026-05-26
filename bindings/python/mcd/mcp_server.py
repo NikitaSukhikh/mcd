@@ -12,6 +12,7 @@ import mcd
 
 QueryOutput = Literal["dict", "json", "csv", "table"]
 QueryBatchOutput = Literal["dict", "json", "table"]
+SearchKind = Literal["markdown", "schema", "manifest", "annotation", "provenance"]
 
 
 def _open_document(path: str | Path) -> mcd.Document:
@@ -91,6 +92,20 @@ def queries(
             for index, result in enumerate(results)
         )
     raise ValueError("output must be one of: dict, json, table")
+
+
+def search(
+    path: str,
+    query: str,
+    limit: int = 10,
+    kind: SearchKind | None = None,
+    page: str | None = None,
+) -> dict[str, Any]:
+    """Search package content and metadata with BM25."""
+    if limit < 0:
+        raise ValueError("limit must be non-negative")
+    hits = _open_document(path).search(query, limit=limit, kind=kind, page=page)
+    return {"hits": hits, "count": len(hits)}
 
 
 def table(
@@ -211,6 +226,7 @@ def _register_tools(decorator: Callable[..., Any]) -> None:
     decorator(markdown, name="mcd_markdown")
     decorator(query, name="mcd_query")
     decorator(queries, name="mcd_queries")
+    decorator(search, name="mcd_search")
     decorator(table, name="mcd_table")
     decorator(chart, name="mcd_chart")
     decorator(image, name="mcd_image")

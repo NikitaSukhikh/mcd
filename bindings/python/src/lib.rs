@@ -15,6 +15,7 @@ use mcd_core::{
     images::ImageMetadata,
     pdf::{PdfConversionOptions, pdf_to_mcd_bytes as core_pdf_to_mcd_bytes},
     schema::TableSchema as CoreTableSchema,
+    search::{SearchKind, SearchOptions},
     table_view::TableView as CoreTableView,
     tables::{DataTable, TableRow, TypedValue},
     validate,
@@ -210,6 +211,29 @@ impl PyDocument {
             .into_iter()
             .map(|result| PyQueryResult { result })
             .collect())
+    }
+
+    #[pyo3(signature = (query, limit = 10, kind = None, page = None))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        limit: usize,
+        kind: Option<String>,
+        page: Option<String>,
+    ) -> PyResult<PyObject> {
+        let hits = self
+            .package
+            .search(
+                query,
+                SearchOptions {
+                    limit,
+                    kind: parse_search_kind(kind.as_deref())?,
+                    page,
+                },
+            )
+            .map_err(err_to_py)?;
+        json_to_py(py, &serde_json::to_value(hits).map_err(json_err_to_py)?)
     }
 
     fn __repr__(&self) -> String {
@@ -860,6 +884,30 @@ fn query_files(path: PathBuf, sql: Vec<String>) -> PyResult<Vec<PyQueryResult>> 
         .collect())
 }
 
+#[pyfunction(name = "search")]
+#[pyo3(signature = (path, query, limit = 10, kind = None, page = None))]
+fn search_file(
+    py: Python<'_>,
+    path: PathBuf,
+    query: &str,
+    limit: usize,
+    kind: Option<String>,
+    page: Option<String>,
+) -> PyResult<PyObject> {
+    let package = McdPackage::open_path(&path).map_err(err_to_py)?;
+    let hits = package
+        .search(
+            query,
+            SearchOptions {
+                limit,
+                kind: parse_search_kind(kind.as_deref())?,
+                page,
+            },
+        )
+        .map_err(err_to_py)?;
+    json_to_py(py, &serde_json::to_value(hits).map_err(json_err_to_py)?)
+}
+
 #[pymodule]
 fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(open_package, module)?)?;
@@ -867,6 +915,7 @@ fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(pdf_to_mcd_bytes, module)?)?;
     module.add_function(wrap_pyfunction!(query_file, module)?)?;
     module.add_function(wrap_pyfunction!(query_files, module)?)?;
+    module.add_function(wrap_pyfunction!(search_file, module)?)?;
     module.add_class::<PyDocument>()?;
     module.add_class::<PyBlock>()?;
     module.add_class::<PyTable>()?;
@@ -895,6 +944,17 @@ fn json_err_to_py(err: serde_json::Error) -> PyErr {
 
 fn query_err_to_py(err: anyhow::Error) -> PyErr {
     PyValueError::new_err(err.to_string())
+}
+
+fn parse_search_kind(kind: Option<&str>) -> PyResult<Option<SearchKind>> {
+    kind.map(|kind| {
+        SearchKind::parse(kind).ok_or_else(|| {
+            PyValueError::new_err(
+                "kind must be one of: markdown, schema, manifest, annotation, provenance",
+            )
+        })
+    })
+    .transpose()
 }
 
 fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {

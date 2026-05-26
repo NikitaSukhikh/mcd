@@ -47,6 +47,22 @@ def test_mcp_helpers_validate_context_query_and_table() -> None:
     assert table["rows"][0] == {"quarter": "Q1", "revenue_gbp": "125000"}
 
 
+def test_mcp_helper_search() -> None:
+    result = mcp_server.search(
+        str(example("auto-manufacturer-tech-spec")),
+        "thermal_limit_deg_c coolant V50D",
+        limit=5,
+    )
+
+    assert result["count"] <= 5
+    assert any(
+        hit["kind"] == "markdown"
+        and hit["path"] == "content/main.md"
+        and "thermal_limit_deg_c" in hit["text"]
+        for hit in result["hits"]
+    )
+
+
 def test_mcp_helpers_metadata_shortcuts() -> None:
     path = str(example("auto-manufacturer-tech-spec"))
 
@@ -81,6 +97,7 @@ def test_mcp_server_registers_tool_names() -> None:
         "mcd_queries",
         "mcd_query",
         "mcd_relationships",
+        "mcd_search",
         "mcd_table",
         "mcd_validate",
     ]
