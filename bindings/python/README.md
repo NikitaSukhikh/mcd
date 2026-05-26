@@ -30,6 +30,18 @@ provenance = doc.provenance()
 relationships = doc.relationships()
 ```
 
+Use `search()` for BM25 search across Markdown blocks, schema metadata,
+manifest metadata, annotations, and provenance:
+
+```python
+hits = doc.search("thermal_limit_deg_c coolant V50D", limit=5)
+mcd.search("report.mcd", "variant_id", kind="schema", limit=5)
+```
+
+Search hits are dictionaries with `path`, `kind`, optional `heading`, optional
+source line fields, `score`, and `text`. CSV table rows are not indexed; use
+`query()` for exact row analysis.
+
 Use `query()` for SQLite-backed table analysis. Package table IDs are available
 as SQL table names, and MCD schema metadata is exposed through runtime tables:
 
@@ -90,6 +102,7 @@ The server exposes these tools:
 | `mcd_validate` | Validate a `.mcd` package and return diagnostics. |
 | `mcd_agent_context` | Return a compact machine-readable document overview. |
 | `mcd_markdown` | Read Markdown, optionally expanding table directives. |
+| `mcd_search` | Search Markdown, schemas, manifest metadata, annotations, and provenance with BM25. |
 | `mcd_query` | Run read-only SQL against package tables and metadata. |
 | `mcd_queries` | Run multiple read-only SQL queries against one loaded package. |
 | `mcd_table` | Return table schema and optional row data. |

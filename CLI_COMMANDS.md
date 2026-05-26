@@ -42,9 +42,9 @@ python -m mcd.mcp_server
 ```
 
 The official MCP server exposes validation, inspection, agent context, Markdown
-extraction, SQL querying, table/chart/image/annotation metadata, relationships,
-external data, provenance, rendering, packing, unpacking, initialization, and
-annotation creation, and PDF conversion tools.
+extraction, BM25 search, SQL querying, table/chart/image/annotation metadata,
+relationships, external data, provenance, rendering, packing, unpacking,
+initialization, annotation creation, and PDF conversion tools.
 
 ## Quick Render
 
@@ -82,6 +82,7 @@ xdg-open revenue-report.html
 | `mcd convert-pdf <file> --output <output>` | Convert a PDF into a minimal MCD package. |
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
+| `mcd search <file> <query>` | Search package content and metadata with BM25. |
 | `mcd query <file> <sql>` | Query package tables and schema metadata with one read-only SQL statement. |
 | `mcd query-batch <file> --sql <sql> [--sql <sql> ...]` | Run multiple read-only SQL queries against one loaded package. |
 | `mcd tools [file]` | Show Python, SQL, schema, relationship, unit, external-data, and provenance capabilities for agents. |
@@ -255,6 +256,67 @@ mcd extract report.mcd --external-data
 mcd extract report.mcd --provenance
 mcd extract report.mcd --annotations
 mcd extract report.mcd --annotations --page content/main.md --line 12
+```
+
+## `search`
+
+```bash
+mcd search [options] <file> <query>
+```
+
+Searches package-owned content and metadata with an in-memory BM25 index. Search
+is meant for finding relevant document passages, schema fields, annotations, or
+provenance records before using `mcd query` for exact table-row analysis.
+
+Indexed corpus:
+
+- Markdown content split into stable source blocks.
+- Table schema names, column names, labels, types, enum values, keys, relationships, and units.
+- Manifest title, table/image/external-data metadata, and package paths.
+- Annotation and provenance text.
+
+CSV table rows are not indexed. Use `mcd query` for row filtering,
+aggregation, joins, ordering, and exact values.
+
+Arguments:
+
+| Argument | Purpose |
+| --- | --- |
+| `<file>` | Package file to search. |
+| `<query>` | Search terms. Underscore identifiers such as `thermal_limit_deg_c` are matched as full tokens and component terms. |
+
+Options:
+
+| Option | Purpose |
+| --- | --- |
+| `--format <format>` | Output format: `text` or `json`. Defaults to `text`. |
+| `--limit <n>` | Maximum result count. Defaults to `10`. |
+| `--kind <kind>` | Filter by indexed kind: `markdown`, `schema`, `manifest`, `annotation`, or `provenance`. |
+| `--page <path>` | Filter by package-internal path, for example `content/main.md`. |
+| `-h`, `--help` | Print help. |
+
+JSON result shape:
+
+```json
+[
+  {
+    "path": "content/main.md",
+    "kind": "markdown",
+    "heading": "Powertrain calibration specifications",
+    "line_start": 48,
+    "line_end": 48,
+    "score": 12.4,
+    "text": "..."
+  }
+]
+```
+
+Examples:
+
+```bash
+mcd search report.mcd "thermal_limit_deg_c coolant V50D" --format json --limit 5
+mcd search report.mcd "coolant flow" --kind markdown --page content/main.md
+mcd search report.mcd "variant_id" --kind schema --format json
 ```
 
 ## `query`

@@ -81,10 +81,10 @@ the CLI section.
 ## MCP Server
 
 The official MCP server is published as the Rust `mcd-mcp` binary. It exposes
-MCD package validation, inspection, agent context, Markdown extraction, SQL
-querying, table/chart/image/annotation metadata, rendering, packing,
-unpacking, initialization, annotation creation, and PDF conversion tools to
-MCP-capable agents.
+MCD package validation, inspection, agent context, Markdown extraction, BM25
+search, SQL querying, table/chart/image/annotation metadata, rendering,
+packing, unpacking, initialization, annotation creation, and PDF conversion
+tools to MCP-capable agents.
 
 ```bash
 cargo install mcd-mcp --version 0.1.0-alpha.2
@@ -141,6 +141,7 @@ doc = mcd.open("report.mcd")
 validation = doc.validate()
 blocks = doc.blocks()
 markdown = doc.markdown(expand_tables=True)
+hits = doc.search("thermal_limit_deg_c coolant", limit=5)
 ```
 
 Optional pandas support:

@@ -14,7 +14,7 @@ The official MCP server is the Rust `mcd-mcp` binary. It is the recommended
 runtime-neutral server for MCP-capable agents:
 
 ```bash
-cargo install mcd-mcp --version 0.1.0-alpha.1
+cargo install mcd-mcp --version 0.1.0-alpha.2
 mcd-mcp --transport stdio
 ```
 
@@ -78,6 +78,7 @@ Available MCP tools in the Python convenience server:
 | `mcd_validate` | Validate a package before using its contents. |
 | `mcd_agent_context` | Inspect document structure, tables, charts, images, and metadata. |
 | `mcd_markdown` | Read original or table-expanded Markdown. |
+| `mcd_search` | Search Markdown, schemas, manifest metadata, annotations, and provenance with BM25. |
 | `mcd_query` | Run read-only SQL against package tables and metadata tables. |
 | `mcd_queries` | Run multiple read-only SQL queries against one loaded package. |
 | `mcd_table` | Fetch one table's schema and optional rows. |
@@ -105,11 +106,12 @@ For agents, prefer this order:
 
 1. Validate the package.
 2. Inspect document context and available tables.
-3. Use SQL metadata tables to discover columns, keys, relationships, and units.
-4. Use SQL queries for table questions.
-5. Use schema keys, relationships, external data, and provenance shortcuts when lineage or joins matter.
-6. Use direct table/chart/image/annotation APIs when exact object access is needed.
-7. Return concise answers with the field names, table names, and condition values used.
+3. Use BM25 search to find relevant prose, schema fields, annotations, or provenance records.
+4. Use SQL metadata tables to discover columns, keys, relationships, and units.
+5. Use SQL queries for table-row questions.
+6. Use schema keys, relationships, external data, and provenance shortcuts when lineage or joins matter.
+7. Use direct table/chart/image/annotation APIs when exact object access is needed.
+8. Return concise answers with the field names, table names, and condition values used.
 
 ## Validate a Package
 
@@ -204,6 +206,59 @@ print(context.keys())
 ```
 
 Then query only the tables needed for the task.
+
+## Search Content and Metadata
+
+Use `search()` when you need to find the relevant document passage, schema
+field, annotation, or provenance record before doing more targeted extraction or
+SQL.
+
+```python
+hits = doc.search("thermal_limit_deg_c coolant V50D", limit=5)
+```
+
+Top-level form:
+
+```python
+hits = mcd.search(
+    "examples/auto-manufacturer-tech-spec/auto-manufacturer-tech-spec.mcd",
+    "variant_id",
+    kind="schema",
+    limit=5,
+)
+```
+
+Filters:
+
+```python
+doc.search("coolant flow", kind="markdown", page="content/main.md")
+doc.search("variant_id", kind="schema")
+doc.search("source-pdf", kind="provenance")
+```
+
+Supported `kind` values are `markdown`, `schema`, `manifest`, `annotation`, and
+`provenance`.
+
+Result shape:
+
+```python
+[
+    {
+        "path": "content/main.md",
+        "kind": "markdown",
+        "heading": "Powertrain calibration specifications",
+        "line_start": 48,
+        "line_end": 48,
+        "score": 12.4,
+        "text": "...",
+    }
+]
+```
+
+Search indexes Markdown blocks, table schema and column metadata, manifest
+metadata, annotations, and provenance text. It intentionally does not index CSV
+table rows. For exact row values, filters, joins, aggregations, and ordering,
+use `doc.query(...)`.
 
 ## Query Tables with SQL
 
@@ -764,6 +819,7 @@ Top-level functions:
 
 ```python
 mcd.open(path) -> Document
+mcd.search(path, query, limit=10, kind=None, page=None) -> list[dict]
 mcd.query(path, sql) -> QueryResult
 mcd.convert_pdf(input, output, title=None) -> Document
 mcd.pdf_to_mcd_bytes(pdf, title=None, source_filename=None) -> bytes
@@ -784,6 +840,7 @@ doc.external_data()
 doc.provenance()
 doc.relationships()
 doc.markdown(expand_tables=False)
+doc.search(query, limit=10, kind=None, page=None)
 doc.query(sql)
 doc.to_agent_context(include_tables=True, include_layout=False)
 ```

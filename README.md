@@ -201,6 +201,13 @@ mcd extract report.mcd --provenance
 mcd extract report.mcd --annotations
 ```
 
+Search document content and package metadata:
+
+```bash
+mcd search report.mcd "thermal_limit_deg_c coolant V50D" --format json --limit 5
+mcd search report.mcd "variant_id" --kind schema --format json
+```
+
 Query tables and schema metadata with read-only SQL:
 
 ```bash
@@ -287,6 +294,29 @@ mcd extract report.mcd --export annotations --page content/main.md --line 12
 ```
 
 `--page` and `--line` only apply to annotation export. Lines are 1-based.
+
+### `mcd search`
+
+Searches package-owned content and metadata with an in-memory BM25 index.
+
+```bash
+mcd search <file.mcd> <query> [--format text|json] [--limit n] [--kind markdown|schema|manifest|annotation|provenance] [--page <path>]
+```
+
+Search indexes Markdown blocks, table schemas and columns, manifest metadata,
+annotations, and provenance text. It does not index CSV table rows; use
+`mcd query` for row filtering, exact values, joins, aggregates, and ordering.
+
+Examples:
+
+```bash
+mcd search report.mcd "thermal_limit_deg_c coolant V50D" --format json --limit 5
+mcd search report.mcd "coolant flow" --kind markdown --page content/main.md
+mcd search report.mcd "variant_id" --kind schema --format json
+```
+
+JSON hits include `path`, `kind`, optional `heading`, optional source line
+fields, `score`, and `text`.
 
 ### `mcd query`
 
