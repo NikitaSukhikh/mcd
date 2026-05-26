@@ -18,7 +18,7 @@ mcd <command>
 MCD tools can be exposed to AI agents through the official Rust MCP server:
 
 ```bash
-cargo install mcd-mcp --version 0.1.0-alpha.1
+cargo install mcd-mcp --version 0.1.0-alpha.2
 mcd-mcp --transport stdio
 ```
 

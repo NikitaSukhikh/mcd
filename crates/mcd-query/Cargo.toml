@@ -1,6 +1,6 @@
 [package]
 name = "mcd-query"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,7 +11,7 @@ description = "Read-only SQL query engine for Markdown CSV Document package tabl
 
 [dependencies]
 anyhow = "1"
-mcd-core = { version = "0.1.0-alpha.1", path = "../mcd-core" }
+mcd-core = { version = "=0.1.0-alpha.2", path = "../mcd-core" }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

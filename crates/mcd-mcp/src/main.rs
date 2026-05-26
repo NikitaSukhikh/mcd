@@ -23,5 +23,4 @@ fn main() -> Result<()> {
     match cli.transport {
         Transport::Stdio => mcd_mcp::run_stdio(),
     }
-    .map_err(Into::into)
 }

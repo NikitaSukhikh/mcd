@@ -9,13 +9,13 @@ installed and available on `PATH`.
 Install the CLI with Cargo:
 
 ```bash
-cargo install mcd-cli --version 0.1.0-alpha.1
+cargo install mcd-cli --version 0.1.0-alpha.2
 ```
 
 Or download a prebuilt binary from:
 
 ```text
-https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.1
+https://github.com/NikitaSukhikh/mcd/releases/tag/v0.1.0-alpha.2
 ```
 
 To install from a checkout of this package:

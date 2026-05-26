@@ -396,12 +396,15 @@ fn push_schema_items(
     path: &str,
     schema: &TableSchema,
 ) {
+    let primary_key = if schema.primary_key.is_empty() {
+        String::new()
+    } else {
+        format!("primary key {}", schema.primary_key.join(" "))
+    };
     let table_text = compact_join([
         table_id.to_owned(),
         schema.id.clone(),
-        (!schema.primary_key.is_empty())
-            .then(|| format!("primary key {}", schema.primary_key.join(" ")))
-            .unwrap_or_default(),
+        primary_key,
         schema
             .foreign_keys
             .iter()

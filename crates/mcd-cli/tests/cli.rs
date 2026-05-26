@@ -386,12 +386,18 @@ fn search_finds_markdown_and_schema_hits() {
     assert!(schema.status.success(), "{}", stderr(&schema));
     let schema_hits: serde_json::Value =
         serde_json::from_str(&stdout(&schema)).expect("schema search json");
-    assert!(schema_hits.as_array().expect("schema hits").iter().all(|hit| {
-        hit["kind"] == "schema"
-            && hit["path"]
-                .as_str()
-                .is_some_and(|path| path.ends_with(".schema.json"))
-    }));
+    assert!(
+        schema_hits
+            .as_array()
+            .expect("schema hits")
+            .iter()
+            .all(|hit| {
+                hit["kind"] == "schema"
+                    && hit["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".schema.json"))
+            })
+    );
 }
 
 #[test]

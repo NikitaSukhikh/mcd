@@ -273,14 +273,14 @@ impl SemanticUnit {
                     source,
                 ));
             }
-            if self.label.as_deref().map_or(true, str::is_empty) {
+            if self.label.as_deref().is_none_or(str::is_empty) {
                 return Err(schema_error(
                     "schema.unit.custom.label.missing",
                     format!("Custom unit for column '{column_name}' must declare a label."),
                     source,
                 ));
             }
-        } else if self.code.as_deref().map_or(true, str::is_empty) {
+        } else if self.code.as_deref().is_none_or(str::is_empty) {
             return Err(schema_error(
                 "schema.unit.code.missing",
                 format!("Unit for column '{column_name}' must declare a code."),

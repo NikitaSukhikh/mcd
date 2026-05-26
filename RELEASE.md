@@ -115,8 +115,8 @@ The `mcd-php` repository is a split package containing the contents of
 After registry verification, tag the release:
 
 ```bash
-git tag v0.1.0-alpha.1
-git push origin v0.1.0-alpha.1
+git tag v0.1.0-alpha.2
+git push origin v0.1.0-alpha.2
 ```
 
 The tag workflow uploads Windows, macOS, and Linux CLI and MCP server binaries

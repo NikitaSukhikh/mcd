@@ -9,7 +9,7 @@ The `mcd` CLI works with `.mcd` files as packages, and it can also validate and 
 For command-line use, install the Rust CLI:
 
 ```bash
-cargo install mcd-cli --version 0.1.0-alpha.1
+cargo install mcd-cli --version 0.1.0-alpha.2
 ```
 
 Then use:
@@ -33,7 +33,7 @@ cargo run -p mcd-mcp -- --transport stdio
 After publishing/installing:
 
 ```bash
-cargo install mcd-mcp --version 0.1.0-alpha.1
+cargo install mcd-mcp --version 0.1.0-alpha.2
 mcd-mcp --transport stdio
 ```
 
@@ -49,8 +49,8 @@ cargo install --path crates/mcd-cli
 Rust libraries are available as crates:
 
 ```bash
-cargo add mcd-core@0.1.0-alpha.1
-cargo add mcd-render@0.1.0-alpha.1
+cargo add mcd-core@0.1.0-alpha.2
+cargo add mcd-render@0.1.0-alpha.2
 ```
 
 TypeScript/JavaScript projects can install:

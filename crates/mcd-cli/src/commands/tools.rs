@@ -211,12 +211,13 @@ fn package_schema_summary(path: &Path) -> Result<Value> {
 }
 
 fn guide_text(guide: &Value) -> String {
-    let mut lines = Vec::new();
-    lines.push("# MCD Python and SQL Tools".to_owned());
-    lines.push(String::new());
-    lines.push("Python import:".to_owned());
-    lines.push("  import mcd".to_owned());
-    lines.push(String::new());
+    let mut lines = vec![
+        "# MCD Python and SQL Tools".to_owned(),
+        String::new(),
+        "Python import:".to_owned(),
+        "  import mcd".to_owned(),
+        String::new(),
+    ];
     push_list(
         &mut lines,
         "Python top-level commands:",
