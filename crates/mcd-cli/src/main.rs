@@ -114,6 +114,14 @@ enum Command {
         #[arg(long, value_enum, default_value_t = QueryOutputFormat::Table)]
         format: QueryOutputFormat,
     },
+    /// Run multiple read-only SQL queries against one loaded package.
+    QueryBatch {
+        /// Package file to query.
+        file: PathBuf,
+        /// SQL SELECT query to run. Repeat for multiple result sets.
+        #[arg(long = "sql", required = true)]
+        sql: Vec<String>,
+    },
     /// Show Python and SQL tool capabilities for agents.
     Tools {
         /// Optional package file whose table schemas should be listed.
@@ -245,6 +253,7 @@ fn main() -> Result<()> {
                 QueryOutputFormat::Csv => commands::query::OutputFormat::Csv,
             },
         ),
+        Command::QueryBatch { file, sql } => commands::query::run_batch(&file, &sql),
         Command::Tools { file, format } => commands::tools::run(
             file.as_deref(),
             match format {

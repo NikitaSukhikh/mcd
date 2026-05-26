@@ -8,6 +8,87 @@ The PyPI distribution name is `mcdee`; the import package is `mcd`.
 import mcd
 ```
 
+## MCP Servers for Agents
+
+The official MCP server is the Rust `mcd-mcp` binary. It is the recommended
+runtime-neutral server for MCP-capable agents:
+
+```bash
+cargo install mcd-mcp --version 0.1.0-alpha.1
+mcd-mcp --transport stdio
+```
+
+From a source checkout:
+
+```bash
+cargo run -p mcd-mcp -- --transport stdio
+```
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcd": {
+      "command": "mcd-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}
+```
+
+The Python package also includes a convenience MCP implementation for
+Python-first environments.
+
+Agents that support the Model Context Protocol can use the Python package as a
+local MCP server. Install the optional dependency group:
+
+```bash
+pip install "mcdee[mcp]"
+```
+
+Run with stdio, which is the default transport used by local MCP clients:
+
+```bash
+mcd-python-mcp
+```
+
+Equivalent module command:
+
+```bash
+python -m mcd.mcp_server
+```
+
+Example Python server client configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcd": {
+      "command": "mcd-python-mcp"
+    }
+  }
+}
+```
+
+Available MCP tools in the Python convenience server:
+
+| Tool | Use |
+| --- | --- |
+| `mcd_validate` | Validate a package before using its contents. |
+| `mcd_agent_context` | Inspect document structure, tables, charts, images, and metadata. |
+| `mcd_markdown` | Read original or table-expanded Markdown. |
+| `mcd_query` | Run read-only SQL against package tables and metadata tables. |
+| `mcd_queries` | Run multiple read-only SQL queries against one loaded package. |
+| `mcd_table` | Fetch one table's schema and optional rows. |
+| `mcd_chart` | Fetch one chart's metadata and optional source rows. |
+| `mcd_image` | Fetch one image's metadata. |
+| `mcd_annotations` | List or filter annotations. |
+| `mcd_relationships` | Discover declared table relationships. |
+| `mcd_external_data` | Inspect manifest-declared external source references. |
+| `mcd_provenance` | Inspect package provenance metadata. |
+| `mcd_convert_pdf` | Convert a PDF file to a `.mcd` package. |
+
 ## Core Workflow
 
 Open a package once, then use the document object for all inspection.
@@ -141,6 +222,27 @@ Top-level form:
 result = mcd.query(
     "examples/revenue-report/revenue-report.mcd",
     "select quarter, revenue_gbp from revenue order by revenue_gbp desc limit 1",
+)
+```
+
+Run multiple read-only queries against one loaded package:
+
+```python
+results = doc.queries([
+    "select count(*) as rows from revenue",
+    "select quarter from revenue order by revenue_gbp desc limit 1",
+])
+```
+
+Top-level batch form:
+
+```python
+results = mcd.queries(
+    "examples/revenue-report/revenue-report.mcd",
+    [
+        "select count(*) as rows from revenue",
+        "select max(revenue_gbp) as max_revenue from revenue",
+    ],
 )
 ```
 

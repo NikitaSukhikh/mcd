@@ -31,12 +31,17 @@ Issues = "https://github.com/mcd-format/mcd/issues"
 
 [project.optional-dependencies]
 pandas = ["pandas>=1.5"]
-test = ["pytest>=8", "maturin>=1.7", "pandas>=1.5"]
+mcp = ["mcp>=1.0"]
+test = ["pytest>=8", "maturin>=1.7", "pandas>=1.5", "mcp>=1.0"]
+
+[project.scripts]
+mcd-python-mcp = "mcd.mcp_server:main"
 
 [tool.maturin]
 module-name = "mcd._native"
 python-source = "."
 features = ["pyo3/extension-module"]
+include = ["mcd/mcp_server.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

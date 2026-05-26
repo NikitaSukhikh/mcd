@@ -18,3 +18,23 @@ pub fn run(file: &Path, sql: &str, format: OutputFormat) -> Result<()> {
     print!("{output}");
     Ok(())
 }
+
+pub fn run_batch(file: &Path, queries: &[String]) -> Result<()> {
+    let results = mcd_query::query_path_many(file, queries)?;
+    let payload = serde_json::json!({
+        "queryCount": results.len(),
+        "queries": results
+            .iter()
+            .enumerate()
+            .map(|(index, result)| {
+                serde_json::json!({
+                    "index": index,
+                    "sql": queries[index],
+                    "result": result.as_json(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    });
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}

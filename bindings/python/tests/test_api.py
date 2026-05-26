@@ -131,6 +131,34 @@ def test_sql_query_api() -> None:
         doc.query("delete from revenue")
 
 
+def test_sql_queries_api() -> None:
+    doc = mcd.open(example("revenue-report"))
+
+    results = doc.queries(
+        [
+            "select count(*) as rows from revenue",
+            "select quarter from revenue order by revenue_gbp desc limit 1",
+        ]
+    )
+
+    assert len(results) == 2
+    assert results[0].rows == [{"rows": 4}]
+    assert results[1].rows == [{"quarter": "Q4"}]
+
+    top_level = mcd.queries(
+        example("revenue-report"),
+        [
+            "select max(revenue_gbp) as max_revenue from revenue",
+            "select table_id from mcd_tables",
+        ],
+    )
+    assert top_level[0].rows == [{"max_revenue": 158250.0}]
+    assert top_level[1].rows == [{"table_id": "revenue"}]
+
+    with pytest.raises(ValueError, match="query must be a SELECT statement"):
+        doc.queries(["select count(*) from revenue", "delete from revenue"])
+
+
 def test_sql_schema_metadata_tables() -> None:
     doc = mcd.open(example("auto-manufacturer-tech-spec"))
 

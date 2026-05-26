@@ -15,6 +15,7 @@ from ._native import (
     convert_pdf,
     open,
     pdf_to_mcd_bytes,
+    queries,
     query,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "convert_pdf",
     "open",
     "pdf_to_mcd_bytes",
+    "queries",
     "query",
 ]

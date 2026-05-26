@@ -15,6 +15,37 @@ After installing the CLI, use:
 mcd <command>
 ```
 
+MCD tools can be exposed to AI agents through the official Rust MCP server:
+
+```bash
+cargo install mcd-mcp --version 0.1.0-alpha.1
+mcd-mcp --transport stdio
+```
+
+From this repository:
+
+```bash
+cargo run -p mcd-mcp -- --transport stdio
+```
+
+Python installations can also expose a convenience MCP server:
+
+```bash
+pip install "mcdee[mcp]"
+mcd-python-mcp
+```
+
+Equivalent module form:
+
+```bash
+python -m mcd.mcp_server
+```
+
+The official MCP server exposes validation, inspection, agent context, Markdown
+extraction, SQL querying, table/chart/image/annotation metadata, relationships,
+external data, provenance, rendering, packing, unpacking, initialization, and
+PDF conversion tools.
+
 ## Quick Render
 
 1. Render an MCD file to HTML:
@@ -51,7 +82,8 @@ xdg-open revenue-report.html
 | `mcd convert-pdf <file> --output <output>` | Convert a PDF into a minimal MCD package. |
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
-| `mcd query <file> <sql>` | Query package tables and schema metadata with read-only SQL. |
+| `mcd query <file> <sql>` | Query package tables and schema metadata with one read-only SQL statement. |
+| `mcd query-batch <file> --sql <sql> [--sql <sql> ...]` | Run multiple read-only SQL queries against one loaded package. |
 | `mcd tools [file]` | Show Python, SQL, schema, relationship, unit, external-data, and provenance capabilities for agents. |
 | `mcd render <file> <target> --output <output>` | Render an MCD package. |
 | `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
@@ -256,6 +288,22 @@ mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_nam
 ```
 
 The query runtime uses an in-memory SQLite database. Package tables are loaded as SQLite tables named by manifest table ID. MCD primary keys and foreign keys are emitted as SQLite table constraints where they map cleanly, and MCD metadata is available through reserved introspection tables.
+
+## `query-batch`
+
+```bash
+mcd query-batch <file> --sql <sql> [--sql <sql> ...]
+```
+
+Runs multiple read-only SQL queries after loading the package tables into SQLite once. Output is JSON with one indexed result per query.
+
+Examples:
+
+```bash
+mcd query-batch report.mcd \
+  --sql "select count(*) as rows from revenue" \
+  --sql "select quarter from revenue order by revenue_gbp desc limit 1"
+```
 
 Metadata tables:
 

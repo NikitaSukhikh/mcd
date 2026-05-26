@@ -68,6 +68,37 @@ cargo add mcd-wasm@0.1.0-alpha.1
 For command-line integration from Rust projects, install `mcd-cli` as shown in
 the CLI section.
 
+## MCP Server
+
+The official MCP server is published as the Rust `mcd-mcp` binary. It exposes
+MCD package validation, inspection, agent context, Markdown extraction, SQL
+querying, table/chart/image/annotation metadata, rendering, packing,
+unpacking, initialization, and PDF conversion tools to MCP-capable agents.
+
+```bash
+cargo install mcd-mcp --version 0.1.0-alpha.1
+mcd-mcp --transport stdio
+```
+
+From a source checkout:
+
+```bash
+cargo run -p mcd-mcp -- --transport stdio
+```
+
+Example local MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcd": {
+      "command": "mcd-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}
+```
+
 ## Python
 
 The PyPI distribution is `mcdee`; the Python import package is `mcd`.
@@ -102,6 +133,16 @@ Optional pandas support:
 ```bash
 pip install "mcdee[pandas]"
 ```
+
+Optional Python MCP server support for Python-first environments:
+
+```bash
+pip install "mcdee[mcp]"
+mcd-python-mcp
+```
+
+Use `python -m mcd.mcp_server` if you prefer module execution. The default
+transport is stdio for local MCP clients.
 
 ## TypeScript and JavaScript
 
@@ -181,6 +222,8 @@ $mcd = new Client('/path/to/mcd');
 | Rust | `mcd-render` | HTML renderer. |
 | Rust | `mcd-wasm` | Raw WebAssembly bindings. |
 | Python | `mcdee` | Import as `mcd`. |
+| MCP | `mcd-mcp` | Official Rust MCP server for local MCP clients. |
+| Python MCP | `mcdee[mcp]` | Python convenience MCP server. |
 | npm | `@mcd-nix/parser` | Includes embedded WebAssembly. |
 | Composer | `mcd-nix/parser` | PHP wrapper; requires the `mcd` CLI or prebuilt binary. |
 

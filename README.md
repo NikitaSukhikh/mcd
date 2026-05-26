@@ -24,6 +24,19 @@ From this repository:
 cargo run -p mcd-cli -- <command>
 ```
 
+For AI agents that support MCP, run the official Rust MCP server:
+
+```bash
+cargo run -p mcd-mcp -- --transport stdio
+```
+
+After publishing/installing:
+
+```bash
+cargo install mcd-mcp --version 0.1.0-alpha.1
+mcd-mcp --transport stdio
+```
+
 To install the CLI locally from the checkout:
 
 ```bash
@@ -50,6 +63,14 @@ the import package `mcd`:
 pip install mcdee
 ```
 
+Python environments can also install optional MCP server dependencies and run a
+Python convenience server:
+
+```bash
+pip install "mcdee[mcp]"
+mcd-python-mcp
+```
+
 PHP projects can install the Composer package. The PHP wrapper delegates to the
 `mcd` CLI, so install the CLI first and make sure it is on `PATH`.
 
@@ -68,6 +89,8 @@ For publishing and downloadable binary releases, see [RELEASE.md](RELEASE.md).
 ## Language Bindings
 
 - Python bindings are in `bindings/python`.
+- The official MCP server is the Rust `mcd-mcp` binary in `crates/mcd-mcp`.
+- Python MCP server support is also available through `mcdee[mcp]`.
 - TypeScript/JavaScript bindings are in `bindings/typescript`.
 - PHP wrapper bindings are in `bindings/php` and delegate to the installed `mcd` CLI.
 - A local-first browser viewer/editor is in `web/mcd-viewer`.
@@ -181,6 +204,7 @@ Query tables and schema metadata with read-only SQL:
 mcd query report.mcd "select count(*) as rows from revenue" --format json
 mcd query report.mcd "select table_id, column_name from mcd_primary_keys" --format json
 mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
+mcd query-batch report.mcd --sql "select count(*) as rows from revenue" --sql "select max(revenue_gbp) as max_revenue from revenue"
 ```
 
 ## Command Reference
@@ -284,6 +308,22 @@ SQLite key constraints are created for declared MCD primary and foreign keys, so
 ```bash
 mcd query report.mcd "select name, pk from pragma_table_info('revenue') where pk > 0"
 mcd query report.mcd "select [table], [from], [to] from pragma_foreign_key_list('orders')"
+```
+
+### `mcd query-batch`
+
+Runs multiple read-only SQL queries after loading package tables into SQLite once. Output is JSON with one indexed result per query.
+
+```bash
+mcd query-batch <file.mcd> --sql <sql> [--sql <sql> ...]
+```
+
+Example:
+
+```bash
+mcd query-batch report.mcd \
+  --sql "select count(*) as rows from revenue" \
+  --sql "select quarter from revenue order by revenue_gbp desc limit 1"
 ```
 
 ### `mcd render`

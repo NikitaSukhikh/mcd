@@ -30,6 +30,7 @@ fn guide_json(package: Option<Value>) -> Value {
             "topLevel": [
                 "mcd.open(path) -> Document",
                 "mcd.query(path, sql) -> QueryResult",
+                "mcd.queries(path, [sql, ...]) -> list[QueryResult]",
                 "mcd.convert_pdf(input, output, title=None) -> Document",
                 "mcd.pdf_to_mcd_bytes(pdf, title=None, source_filename=None) -> bytes"
             ],
@@ -46,6 +47,7 @@ fn guide_json(package: Option<Value>) -> Value {
                 "doc.relationships() -> list[dict]",
                 "doc.markdown(expand_tables=False) -> str",
                 "doc.query(sql) -> QueryResult",
+                "doc.queries([sql, ...]) -> list[QueryResult]",
                 "doc.to_agent_context(include_tables=True, include_layout=False) -> dict"
             ],
             "queryResult": [
@@ -112,11 +114,13 @@ fn guide_json(package: Option<Value>) -> Value {
             "cli": [
                 "mcd query <file> \"select count(*) as rows from table_id\"",
                 "mcd query <file> \"select * from table_id limit 5\" --format json",
-                "mcd query <file> \"select column, max(metric) from table_id group by column\" --format csv"
+                "mcd query <file> \"select column, max(metric) from table_id group by column\" --format csv",
+                "mcd query-batch <file> --sql \"select count(*) as rows from table_id\" --sql \"select * from table_id limit 5\""
             ],
             "python": [
                 "doc.query(\"select count(*) as rows from table_id\")",
-                "mcd.query(path, \"select * from table_id limit 5\")"
+                "mcd.query(path, \"select * from table_id limit 5\")",
+                "doc.queries([\"select count(*) as rows from table_id\", \"select * from table_id limit 5\"])"
             ],
             "supported": [
                 "select",

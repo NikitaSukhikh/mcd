@@ -20,7 +20,8 @@ use mcd_core::{
     validate,
 };
 use mcd_query::{
-    QueryResult as CoreQueryResult, QueryValue as CoreQueryValue, query_package, query_path,
+    QueryResult as CoreQueryResult, QueryValue as CoreQueryValue, query_package,
+    query_package_many, query_path, query_path_many,
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -201,6 +202,14 @@ impl PyDocument {
         Ok(PyQueryResult {
             result: query_package(&self.package, sql).map_err(query_err_to_py)?,
         })
+    }
+
+    fn queries(&self, sql: Vec<String>) -> PyResult<Vec<PyQueryResult>> {
+        Ok(query_package_many(&self.package, &sql)
+            .map_err(query_err_to_py)?
+            .into_iter()
+            .map(|result| PyQueryResult { result })
+            .collect())
     }
 
     fn __repr__(&self) -> String {
@@ -842,12 +851,22 @@ fn query_file(path: PathBuf, sql: &str) -> PyResult<PyQueryResult> {
     })
 }
 
+#[pyfunction(name = "queries")]
+fn query_files(path: PathBuf, sql: Vec<String>) -> PyResult<Vec<PyQueryResult>> {
+    Ok(query_path_many(path, &sql)
+        .map_err(query_err_to_py)?
+        .into_iter()
+        .map(|result| PyQueryResult { result })
+        .collect())
+}
+
 #[pymodule]
 fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(open_package, module)?)?;
     module.add_function(wrap_pyfunction!(convert_pdf, module)?)?;
     module.add_function(wrap_pyfunction!(pdf_to_mcd_bytes, module)?)?;
     module.add_function(wrap_pyfunction!(query_file, module)?)?;
+    module.add_function(wrap_pyfunction!(query_files, module)?)?;
     module.add_class::<PyDocument>()?;
     module.add_class::<PyBlock>()?;
     module.add_class::<PyTable>()?;

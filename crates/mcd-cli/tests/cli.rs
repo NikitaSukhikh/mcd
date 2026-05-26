@@ -335,6 +335,19 @@ fn query_runs_read_only_sql_against_package_tables() {
     let json: serde_json::Value = serde_json::from_str(&stdout(&pragma)).expect("pragma json");
     assert_eq!(json["rows"][0]["name"], "variant_id");
     assert_eq!(json["rows"][0]["pk"], 1);
+
+    let batch = run(mcd()
+        .arg("query-batch")
+        .arg(&revenue)
+        .arg("--sql")
+        .arg("select count(*) as rows from revenue")
+        .arg("--sql")
+        .arg("select quarter from revenue order by revenue_gbp desc limit 1"));
+    assert!(batch.status.success(), "{}", stderr(&batch));
+    let json: serde_json::Value = serde_json::from_str(&stdout(&batch)).expect("batch json");
+    assert_eq!(json["queryCount"], 2);
+    assert_eq!(json["queries"][0]["result"]["rows"][0]["rows"], 4);
+    assert_eq!(json["queries"][1]["result"]["rows"][0]["quarter"], "Q4");
 }
 
 #[test]

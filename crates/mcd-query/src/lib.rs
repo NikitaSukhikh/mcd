@@ -18,14 +18,34 @@ use serde_json::{Map, Value as JsonValue, json};
 /// Run a read-only SQL query against manifest-declared package tables.
 pub fn query_package(package: &McdPackage, sql: &str) -> Result<QueryResult> {
     validate_read_only_sql(sql)?;
+    let connection = query_connection(package)?;
+    run_read_only_query(&connection, sql)
+}
 
+/// Run multiple read-only SQL queries against manifest-declared package tables.
+///
+/// The package tables are loaded into SQLite once, then each query is prepared
+/// and checked independently for read-only behavior.
+pub fn query_package_many(package: &McdPackage, queries: &[String]) -> Result<Vec<QueryResult>> {
+    validate_query_batch(queries)?;
+    let connection = query_connection(package)?;
+    queries
+        .iter()
+        .map(|sql| run_read_only_query(&connection, sql))
+        .collect()
+}
+
+fn query_connection(package: &McdPackage) -> Result<Connection> {
     let manifest = package.manifest()?;
     let tables = load_manifest_tables(package, &manifest)?;
     let mut connection = Connection::open_in_memory()?;
     connection.execute_batch("PRAGMA query_only = OFF;")?;
     load_tables_into_sqlite(&mut connection, &manifest, tables.values())?;
     connection.execute_batch("PRAGMA query_only = ON;")?;
+    Ok(connection)
+}
 
+fn run_read_only_query(connection: &Connection, sql: &str) -> Result<QueryResult> {
     let mut statement = connection
         .prepare(sql)
         .with_context(|| "prepare SQL query")?;
@@ -40,6 +60,12 @@ pub fn query_package(package: &McdPackage, sql: &str) -> Result<QueryResult> {
 pub fn query_path(path: impl AsRef<Path>, sql: &str) -> Result<QueryResult> {
     let package = McdPackage::open_path(path)?;
     query_package(&package, sql)
+}
+
+/// Open an MCD package from disk and run multiple read-only SQL queries.
+pub fn query_path_many(path: impl AsRef<Path>, queries: &[String]) -> Result<Vec<QueryResult>> {
+    let package = McdPackage::open_path(path)?;
+    query_package_many(&package, queries)
 }
 
 /// Structured result of an SQL query.
@@ -190,6 +216,16 @@ fn validate_read_only_sql(sql: &str) -> Result<()> {
     let lowercase = trimmed.to_ascii_lowercase();
     if !(lowercase.starts_with("select") || lowercase.starts_with("with")) {
         bail!("query must be a SELECT statement");
+    }
+    Ok(())
+}
+
+fn validate_query_batch(queries: &[String]) -> Result<()> {
+    if queries.is_empty() {
+        bail!("query batch cannot be empty");
+    }
+    for sql in queries {
+        validate_read_only_sql(sql)?;
     }
     Ok(())
 }
@@ -566,9 +602,44 @@ mod tests {
     }
 
     #[test]
+    fn runs_multiple_queries_against_one_package() {
+        let package = package();
+        let results = query_package_many(
+            &package,
+            &[
+                "select count(*) as rows from revenue".to_owned(),
+                "select quarter from revenue order by revenue_gbp desc limit 1".to_owned(),
+            ],
+        )
+        .expect("query batch succeeds");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].rows, vec![vec![QueryValue::Integer(2)]]);
+        assert_eq!(
+            results[1].rows,
+            vec![vec![QueryValue::Text("Q2".to_owned())]]
+        );
+    }
+
+    #[test]
     fn rejects_writes() {
         let package = package();
         let err = query_package(&package, "delete from revenue").expect_err("write rejected");
+
+        assert!(err.to_string().contains("query must be a SELECT statement"));
+    }
+
+    #[test]
+    fn rejects_writes_in_query_batches() {
+        let package = package();
+        let err = query_package_many(
+            &package,
+            &[
+                "select count(*) as rows from revenue".to_owned(),
+                "delete from revenue".to_owned(),
+            ],
+        )
+        .expect_err("write rejected");
 
         assert!(err.to_string().contains("query must be a SELECT statement"));
     }

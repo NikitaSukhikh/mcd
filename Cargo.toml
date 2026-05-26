@@ -4,6 +4,7 @@ members = [
     "crates/mcd-query",
     "crates/mcd-render",
     "crates/mcd-cli",
+    "crates/mcd-mcp",
     "crates/mcd-wasm",
     "bindings/python",
 ]
