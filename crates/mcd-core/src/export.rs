@@ -841,7 +841,7 @@ fn spec_from_view_column(
         schema_column,
         column.label.as_deref(),
         column.format.as_deref(),
-        column.currency.as_deref().or(column.unit.as_deref()),
+        column.currency.as_deref().or(column.unit_label.as_deref()),
         column.percent,
     ))
 }
@@ -861,7 +861,12 @@ fn spec_from_schema(
         schema_column,
         encoding.and_then(|encoding| encoding.label.as_deref()),
         encoding.and_then(|encoding| encoding.format.as_deref()),
-        encoding.and_then(|encoding| encoding.currency.as_deref().or(encoding.unit.as_deref())),
+        encoding.and_then(|encoding| {
+            encoding
+                .currency
+                .as_deref()
+                .or(encoding.unit_label.as_deref())
+        }),
         encoding.is_some_and(|encoding| encoding.percent),
     ))
 }
@@ -881,7 +886,9 @@ fn spec_from_column_schema(
             .to_owned(),
         column_type: column.value_type,
         format: format.map(ToOwned::to_owned),
-        suffix_or_currency: suffix_or_currency.map(ToOwned::to_owned),
+        suffix_or_currency: suffix_or_currency
+            .or_else(|| column.unit.as_ref().and_then(|unit| unit.display_label()))
+            .map(ToOwned::to_owned),
         percent,
     }
 }

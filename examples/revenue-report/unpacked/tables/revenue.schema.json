@@ -11,6 +11,10 @@
       "name": "revenue_gbp",
       "type": "decimal",
       "label": "Revenue",
+      "unit": {
+        "code": "GBP",
+        "label": "GBP"
+      },
       "nullable": false
     }
   ]

@@ -80,6 +80,19 @@ impl TableSchema {
                     source,
                 ));
             }
+            if let Some(unit) = &column.unit {
+                if !column.value_type.is_numeric() {
+                    return Err(schema_error(
+                        "schema.unit.type.incompatible",
+                        format!(
+                            "Unit for column '{}' requires an integer or decimal type.",
+                            column.name
+                        ),
+                        source,
+                    ));
+                }
+                unit.validate(&column.name, source)?;
+            }
         }
 
         if has_duplicates(&self.primary_key) {
@@ -224,12 +237,73 @@ pub struct TableColumnSchema {
     /// Human-readable label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Optional semantic unit for numeric measured values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<SemanticUnit>,
     /// Whether empty CSV cells are allowed.
     #[serde(default)]
     pub nullable: bool,
     /// Allowed values for enum columns.
     #[serde(default, alias = "values", alias = "enumValues")]
     pub enum_values: Vec<String>,
+}
+
+/// Simple semantic unit metadata for table columns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticUnit {
+    /// Stable unit code for known units, for example `kg`, `m`, `GBP`, or `percent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Human-facing unit label. Required for custom units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Whether this is an explicit non-convertible custom unit.
+    #[serde(default)]
+    pub custom: bool,
+}
+
+impl SemanticUnit {
+    fn validate(&self, column_name: &str, source: &str) -> Result<()> {
+        if self.custom {
+            if self.code.is_some() {
+                return Err(schema_error(
+                    "schema.unit.custom.code",
+                    format!("Custom unit for column '{column_name}' cannot declare a code."),
+                    source,
+                ));
+            }
+            if self.label.as_deref().map_or(true, str::is_empty) {
+                return Err(schema_error(
+                    "schema.unit.custom.label.missing",
+                    format!("Custom unit for column '{column_name}' must declare a label."),
+                    source,
+                ));
+            }
+        } else if self.code.as_deref().map_or(true, str::is_empty) {
+            return Err(schema_error(
+                "schema.unit.code.missing",
+                format!("Unit for column '{column_name}' must declare a code."),
+                source,
+            ));
+        }
+
+        if self.label.as_deref().is_some_and(str::is_empty) {
+            return Err(schema_error(
+                "schema.unit.label.empty",
+                format!("Unit label for column '{column_name}' cannot be empty."),
+                source,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Return the best human-readable display label for this unit.
+    #[must_use]
+    pub fn display_label(&self) -> Option<&str> {
+        self.label.as_deref().or(self.code.as_deref())
+    }
 }
 
 /// Supported primitive table types.
@@ -298,6 +372,64 @@ mod tests {
         assert_eq!(schema.columns[1].value_type, ColumnType::Decimal);
         assert!(schema.columns[1].nullable);
         assert_eq!(schema.primary_key, ["quarter"]);
+    }
+
+    #[test]
+    fn parses_semantic_units() {
+        let schema = serde_json::from_str::<TableSchema>(
+            r#"{
+                "id": "measurements",
+                "columns": [
+                    {"name": "mass", "type": "decimal", "unit": {"code": "kg", "label": "kg"}},
+                    {"name": "score", "type": "decimal", "unit": {"custom": true, "label": "index points"}}
+                ]
+            }"#,
+        )
+        .expect("schema parses");
+
+        schema
+            .validate("tables/measurements.schema.json")
+            .expect("valid units");
+        assert_eq!(
+            schema.columns[0]
+                .unit
+                .as_ref()
+                .and_then(SemanticUnit::display_label),
+            Some("kg")
+        );
+        assert_eq!(
+            schema.columns[1]
+                .unit
+                .as_ref()
+                .and_then(SemanticUnit::display_label),
+            Some("index points")
+        );
+    }
+
+    #[test]
+    fn rejects_bad_semantic_units() {
+        let cases = [
+            (
+                r#"{"id":"t","columns":[{"name":"name","type":"string","unit":{"code":"kg"}}]}"#,
+                "schema.unit.type.incompatible",
+            ),
+            (
+                r#"{"id":"t","columns":[{"name":"value","type":"decimal","unit":{"custom":true}}]}"#,
+                "schema.unit.custom.label.missing",
+            ),
+            (
+                r#"{"id":"t","columns":[{"name":"value","type":"decimal","unit":{"label":"kg"}}]}"#,
+                "schema.unit.code.missing",
+            ),
+        ];
+
+        for (raw, code) in cases {
+            let schema = serde_json::from_str::<TableSchema>(raw).expect("schema parses");
+            let err = schema
+                .validate("tables/t.schema.json")
+                .expect_err("invalid");
+            assert_eq!(err.diagnostic().map(|d| d.code.as_str()), Some(code));
+        }
     }
 
     #[test]

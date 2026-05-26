@@ -701,14 +701,20 @@ Example `tables/quarterly-performance.schema.json`:
     {
       "name": "revenue_gbp",
       "type": "decimal",
-      "unit": "GBP",
+      "unit": {
+        "code": "GBP",
+        "label": "GBP"
+      },
       "label": "Revenue",
       "nullable": false
     },
     {
       "name": "margin_percent",
       "type": "decimal",
-      "unit": "percent",
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      },
       "label": "Margin",
       "nullable": false
     }
@@ -1736,14 +1742,20 @@ Q4,169000,22.7
     {
       "name": "revenue_gbp",
       "type": "decimal",
-      "unit": "GBP",
+      "unit": {
+        "code": "GBP",
+        "label": "GBP"
+      },
       "label": "Revenue",
       "nullable": false
     },
     {
       "name": "margin_percent",
       "type": "decimal",
-      "unit": "percent",
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      },
       "label": "Margin",
       "nullable": false
     }
@@ -2003,7 +2015,7 @@ An agent can receive:
 
 The agent does not need to infer whether a visual group of words is a table. The table is declared.
 
-The agent does not need to infer whether `£120,000` is a string or a number. The raw value is `120000`, and the schema says `unit: GBP`.
+The agent does not need to infer whether `£120,000` is a string or a number. The raw value is `120000`, and the schema says `unit.code: GBP`.
 
 The agent does not need to infer where the table belongs. The table anchor gives the exact Markdown position.
 

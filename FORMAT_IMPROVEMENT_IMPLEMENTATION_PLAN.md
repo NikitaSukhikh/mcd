@@ -32,6 +32,15 @@ Replace free-form display-only units with a constrained semantic unit model for 
 
 Why: engineering and scientific documents need units that can be validated, converted, and compared.
 
+Decision: keep canonical measurement units constrained, but allow free-form unit text only where it cannot silently change machine semantics.
+
+- Table column schemas should use a structured semantic unit field for numeric measured values, for example a known unit code, dimension, scale, and optional system/reference.
+- For the first implementation, keep this intentionally small: `unit.code` plus optional `unit.label`, or `unit.custom: true` plus required `unit.label`.
+- Table views and chart encodings may keep free-form `unitLabel` display labels such as `"$"`, `"approx. kg"`, `"index points"`, or source-specific wording, but these labels must not be used for conversion or validation.
+- Unknown or domain-specific units may be represented as a structured custom unit with a required free-form label and no automatic conversion unless an explicit conversion rule is supplied later.
+- Source/provenance metadata may keep the original unit text exactly as extracted.
+- Raw CSV cells should remain typed data, not mixed number-and-unit strings, unless the schema column type is `string`.
+
 ## 6. Version and Diff Model
 
 Define stable revision metadata and patch/diff sidecars for controlled review workflows.

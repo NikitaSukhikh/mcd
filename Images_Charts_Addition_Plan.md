@@ -217,13 +217,19 @@ Q4,169000,22.7
     {
       "name": "revenue_gbp",
       "type": "decimal",
-      "unit": "GBP",
+      "unit": {
+        "code": "GBP",
+        "label": "GBP"
+      },
       "label": "Revenue"
     },
     {
       "name": "margin_percent",
       "type": "decimal",
-      "unit": "percent",
+      "unit": {
+        "code": "percent",
+        "label": "%"
+      },
       "label": "Margin"
     }
   ]

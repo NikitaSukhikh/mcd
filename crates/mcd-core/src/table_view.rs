@@ -96,7 +96,7 @@ impl TableView {
             validate_format_declarations(
                 column.format.as_deref(),
                 column.currency.as_deref(),
-                column.unit.as_deref(),
+                column.unit_label.as_deref(),
                 column.percent,
                 schema
                     .column(&column.name)
@@ -135,9 +135,14 @@ pub struct ViewColumn {
     /// Currency code for currency-formatted numeric values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    /// Unit label for numeric values.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
+    /// Free-form display unit label for numeric values.
+    #[serde(
+        default,
+        rename = "unitLabel",
+        alias = "unit",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unit_label: Option<String>,
     /// Whether the value is a percentage.
     #[serde(default)]
     pub percent: bool,
@@ -240,9 +245,14 @@ pub struct ChartEncoding {
     /// Currency code for currency-formatted numeric values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    /// Unit label.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
+    /// Free-form display unit label.
+    #[serde(
+        default,
+        rename = "unitLabel",
+        alias = "unit",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unit_label: Option<String>,
     /// Whether the value is a percentage.
     #[serde(default)]
     pub percent: bool,
@@ -265,7 +275,7 @@ impl ChartEncoding {
         validate_format_declarations(
             self.format.as_deref(),
             self.currency.as_deref(),
-            self.unit.as_deref(),
+            self.unit_label.as_deref(),
             self.percent,
             schema.column(&self.column).map(|column| column.value_type),
             source,
@@ -289,9 +299,14 @@ pub struct MarkLabels {
     /// Currency code for currency-formatted numeric values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    /// Unit label.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
+    /// Free-form display unit label.
+    #[serde(
+        default,
+        rename = "unitLabel",
+        alias = "unit",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unit_label: Option<String>,
     /// Whether the value is a percentage.
     #[serde(default)]
     pub percent: bool,
@@ -310,7 +325,7 @@ impl MarkLabels {
             validate_format_declarations(
                 self.format.as_deref(),
                 self.currency.as_deref(),
-                self.unit.as_deref(),
+                self.unit_label.as_deref(),
                 self.percent,
                 schema
                     .column(column)
@@ -406,6 +421,7 @@ mod tests {
                     name: "quarter".to_owned(),
                     value_type: ColumnType::String,
                     label: None,
+                    unit: None,
                     nullable: false,
                     enum_values: Vec::new(),
                 },
@@ -413,6 +429,7 @@ mod tests {
                     name: "amount".to_owned(),
                     value_type: ColumnType::Decimal,
                     label: None,
+                    unit: None,
                     nullable: false,
                     enum_values: Vec::new(),
                 },
@@ -438,6 +455,29 @@ mod tests {
 
         view.validate("chart", "revenue", &schema(), "tables/chart.view.json")
             .expect("valid chart view");
+    }
+
+    #[test]
+    fn accepts_unit_label_and_legacy_unit_display_fields() {
+        let unit_label = serde_json::from_str::<TableView>(
+            r#"{
+                "id":"default",
+                "table":"revenue",
+                "columns":[{"name":"amount","unitLabel":"kg"}]
+            }"#,
+        )
+        .expect("view parses");
+        assert_eq!(unit_label.columns[0].unit_label.as_deref(), Some("kg"));
+
+        let legacy_unit = serde_json::from_str::<TableView>(
+            r#"{
+                "id":"default",
+                "table":"revenue",
+                "columns":[{"name":"amount","unit":"kg"}]
+            }"#,
+        )
+        .expect("view parses");
+        assert_eq!(legacy_unit.columns[0].unit_label.as_deref(), Some("kg"));
     }
 
     #[test]

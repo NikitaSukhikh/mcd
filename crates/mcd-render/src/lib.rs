@@ -764,7 +764,7 @@ fn format_encoded_value(value: f64, encoding: &ChartEncoding) -> String {
         Some("percent") => format!("{raw}%"),
         _ if encoding.percent => format!("{raw}%"),
         _ => encoding
-            .unit
+            .unit_label
             .as_ref()
             .map(|unit| format!("{raw} {unit}"))
             .unwrap_or(raw),
@@ -801,7 +801,7 @@ fn spec_from_view_column(table: &DataTable, column: &ViewColumn) -> mcd_core::Re
         schema_column,
         column.label.as_deref(),
         column.format.as_deref(),
-        column.currency.as_deref().or(column.unit.as_deref()),
+        column.currency.as_deref().or(column.unit_label.as_deref()),
         column.percent,
     ))
 }
@@ -821,7 +821,9 @@ fn spec_from_schema_column(
             .to_owned(),
         column_type: column.value_type,
         format: format.map(ToOwned::to_owned),
-        suffix_or_currency: suffix_or_currency.map(ToOwned::to_owned),
+        suffix_or_currency: suffix_or_currency
+            .or_else(|| column.unit.as_ref().and_then(|unit| unit.display_label()))
+            .map(ToOwned::to_owned),
         percent,
     }
 }

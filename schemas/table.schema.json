@@ -81,6 +81,7 @@
           ]
         },
         "label": { "type": "string", "minLength": 1 },
+        "unit": { "$ref": "#/$defs/unit" },
         "nullable": { "type": "boolean" },
         "enumValues": {
           "type": "array",
@@ -105,6 +106,43 @@
               { "required": ["values"], "properties": { "values": { "minItems": 1 } } }
             ]
           }
+        },
+        {
+          "if": { "required": ["unit"] },
+          "then": {
+            "properties": {
+              "type": { "enum": ["integer", "decimal"] }
+            }
+          }
+        }
+      ]
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z%][A-Za-z0-9_./%^-]*$"
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "custom": { "type": "boolean" }
+      },
+      "oneOf": [
+        {
+          "required": ["code"],
+          "not": {
+            "required": ["custom"],
+            "properties": { "custom": { "const": true } }
+          }
+        },
+        {
+          "required": ["custom", "label"],
+          "properties": {
+            "custom": { "const": true }
+          },
+          "not": { "required": ["code"] }
         }
       ]
     }
