@@ -10,6 +10,7 @@ use crate::{
     document::{DocumentBlock, McdDocument, SourceSpan},
     errors::{Diagnostic, McdError},
     images::{load_manifest_images, validate_image_anchors},
+    provenance::load_manifest_provenance,
     table_view::TableView,
     tables::{DataTable, load_manifest_tables, row_key},
 };
@@ -46,6 +47,7 @@ pub fn validate_package(package: &McdPackage) -> crate::Result<ValidationResult>
     validate_image_anchors(&document, &images)?;
     let annotations = load_manifest_annotations(package, &manifest, &document)?;
     validate_annotation_markers(&document, &annotations)?;
+    load_manifest_provenance(package, &manifest)?;
     Ok(ValidationResult::valid())
 }
 

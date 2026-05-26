@@ -14,6 +14,7 @@ use crate::{
     errors::{Diagnostic, McdError},
     images::{ImageMetadata, ImageRole},
     manifest::ExternalDataManifestEntry,
+    provenance::{ProvenanceMetadata, load_manifest_provenance},
     schema::{ColumnType, TableColumnSchema},
     table_view::{ChartEncoding, TableView, ViewColumn},
     tables::{DataTable, TableRow, TypedValue},
@@ -38,6 +39,9 @@ pub struct JsonExport {
     /// Parsed annotation metadata objects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotations: Vec<AnnotationMetadata>,
+    /// Parsed package-level provenance metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceMetadata>,
     /// Chart placements with exact source table and view metadata.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub charts: Vec<ChartExportItem>,
@@ -149,6 +153,9 @@ pub struct AgentContextExport {
     /// External data resources referenced by this package.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external_data: Vec<ExternalDataManifestEntry>,
+    /// Package-level provenance metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceMetadata>,
 }
 
 /// Agent context for one chart placement.
@@ -206,6 +213,7 @@ pub fn json_export(package: &McdPackage) -> crate::Result<JsonExport> {
     let images = crate::images::load_manifest_images(package, &manifest)?;
     let annotations = load_manifest_annotations(package, &manifest, &document)?;
     validate_annotation_markers(&document, &annotations)?;
+    let provenance = load_manifest_provenance(package, &manifest)?;
     let charts = chart_export_from_parts(&document, &tables, &views)?.charts;
     Ok(JsonExport {
         manifest,
@@ -220,6 +228,7 @@ pub fn json_export(package: &McdPackage) -> crate::Result<JsonExport> {
             .collect(),
         images: images.into_values().collect(),
         annotations: annotations.into_values().collect(),
+        provenance,
         charts,
     })
 }
@@ -323,6 +332,7 @@ pub fn agent_context_export(package: &McdPackage) -> crate::Result<AgentContextE
     let images = crate::images::load_manifest_images(package, &manifest)?;
     let annotations = load_manifest_annotations(package, &manifest, &document)?;
     validate_annotation_markers(&document, &annotations)?;
+    let provenance = load_manifest_provenance(package, &manifest)?;
     let chart_export = chart_export_from_parts(&document, &tables, &views)?;
 
     Ok(AgentContextExport {
@@ -357,6 +367,7 @@ pub fn agent_context_export(package: &McdPackage) -> crate::Result<AgentContextE
             .collect(),
         annotations: annotations.into_values().collect(),
         external_data: manifest.external_data,
+        provenance,
     })
 }
 

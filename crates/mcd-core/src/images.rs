@@ -371,6 +371,7 @@ mod tests {
             annotations: Vec::new(),
             assets: Vec::new(),
             external_data: Vec::new(),
+            provenance: None,
             layout: None,
         };
 

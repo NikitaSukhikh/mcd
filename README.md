@@ -121,7 +121,7 @@ caption: Revenue by quarter
 :::
 ```
 
-Images and annotations are also stored as package metadata and assets, then referenced from Markdown or the manifest. Large datasets that should not live inside the package can be declared in manifest `externalData` with an absolute URI, media type, optional `sha256:` hash, optional size, and access notes.
+Images and annotations are also stored as package metadata and assets, then referenced from Markdown or the manifest. Large datasets that should not live inside the package can be declared in manifest `externalData` with an absolute URI, media type, optional `sha256:` hash, optional size, and access notes. Package-level audit metadata can be declared with a `provenance` sidecar that records source documents, actors, tools, generated assets, hashes, and timestamps.
 
 ## Common Workflows
 

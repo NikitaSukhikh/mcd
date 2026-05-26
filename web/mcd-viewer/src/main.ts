@@ -114,6 +114,7 @@ interface Manifest {
   images?: ImageManifestEntry[];
   annotations?: AnnotationManifestEntry[];
   assets?: AssetManifestEntry[];
+  provenance?: string;
   layout?: LayoutManifestEntry;
   [key: string]: unknown;
 }

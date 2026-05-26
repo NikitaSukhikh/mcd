@@ -17,6 +17,7 @@ pub fn run(file: &Path) -> Result<()> {
         "tables": manifest.tables.len(),
         "annotations": manifest.annotations.len(),
         "externalData": manifest.external_data.len(),
+        "provenance": manifest.provenance.is_some(),
         "entries": entry_count,
     });
 

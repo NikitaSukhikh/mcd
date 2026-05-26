@@ -76,6 +76,8 @@ report/
     process-diagram.image.json
   annotations/
     review-note.annotation.json
+  provenance/
+    provenance.json
   layout/
     styles.json
     page-map.json
@@ -212,6 +214,7 @@ Optional conformance claims are `MCD-Core`, `MCD-Images`, `MCD-Charts`, and `MCD
       }
     }
   ],
+  "provenance": "provenance/provenance.json",
   "layout": {
     "styles": "layout/styles.json",
     "pageMap": "layout/page-map.json"
@@ -220,6 +223,62 @@ Optional conformance claims are `MCD-Core`, `MCD-Images`, `MCD-Charts`, and `MCD
 ```
 
 Use `externalData` for large or governed datasets that should not be stored inside the `.mcd` archive. The validator checks declaration shape only; it does not fetch external resources. Use absolute `http`, `https`, `s3`, `gs`, `file`, or `ipfs` URIs. Add a `sha256:` hash when deterministic retrieval matters.
+
+Use `provenance` for one package-level sidecar that records source documents, actors, tools, generated assets, hashes, and timestamps. The sidecar should usually live at `provenance/provenance.json`.
+
+Minimal provenance sidecar:
+
+```json
+{
+  "sources": [
+    {
+      "id": "source-pdf",
+      "path": "assets/source.pdf",
+      "mediaType": "application/pdf",
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "createdAt": "2026-05-26T10:00:00Z"
+    }
+  ],
+  "tools": [
+    {
+      "id": "extractor",
+      "name": "mcd-pdf-extract",
+      "version": "0.1.0"
+    }
+  ],
+  "actors": [
+    {
+      "id": "agent-1",
+      "kind": "agent",
+      "name": "Extraction agent"
+    }
+  ],
+  "generatedAssets": [
+    {
+      "id": "main-md",
+      "path": "content/main.md",
+      "mediaType": "text/markdown",
+      "createdAt": "2026-05-26T10:01:00Z",
+      "sourceRefs": ["source-pdf"],
+      "toolRefs": ["extractor"],
+      "actorRefs": ["agent-1"]
+    }
+  ],
+  "activities": [
+    {
+      "id": "extract-1",
+      "kind": "extracted",
+      "startedAt": "2026-05-26T10:00:00Z",
+      "endedAt": "2026-05-26T10:01:00Z",
+      "sourceRefs": ["source-pdf"],
+      "toolRefs": ["extractor"],
+      "actorRefs": ["agent-1"],
+      "inputRefs": ["source:source-pdf"],
+      "outputRefs": ["generatedAsset:main-md", "path:content/main.md"]
+    }
+  ]
+}
+```
 
 Do not declare a table, image, annotation, asset, or layout path unless the corresponding file exists.
 

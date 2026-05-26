@@ -43,6 +43,9 @@ pub struct Manifest {
     /// Declared external data resources that are intentionally not packaged.
     #[serde(default, rename = "externalData")]
     pub external_data: Vec<ExternalDataManifestEntry>,
+    /// Optional provenance metadata sidecar path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
     /// Optional layout file paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<LayoutManifestEntry>,
@@ -154,6 +157,10 @@ impl Manifest {
         let mut ids = std::collections::HashSet::new();
         for external_data in &self.external_data {
             external_data.validate(&mut ids)?;
+        }
+
+        if let Some(provenance) = &self.provenance {
+            validate_manifest_path("manifest.provenance.invalid", provenance)?;
         }
 
         if let Some(layout) = &self.layout {
@@ -378,7 +385,7 @@ impl ExternalDataAccess {
     }
 }
 
-fn is_valid_id(id: &str) -> bool {
+pub(crate) fn is_valid_id(id: &str) -> bool {
     let mut chars = id.chars();
     let Some(first) = chars.next() else {
         return false;
@@ -389,7 +396,7 @@ fn is_valid_id(id: &str) -> bool {
         })
 }
 
-fn is_supported_external_uri(uri: &str) -> bool {
+pub(crate) fn is_supported_external_uri(uri: &str) -> bool {
     let uri = uri.trim();
     if uri.is_empty() || uri.contains(char::is_whitespace) {
         return false;
@@ -410,7 +417,7 @@ fn is_supported_external_uri(uri: &str) -> bool {
     matches!(scheme, "http" | "https" | "s3" | "gs" | "file" | "ipfs")
 }
 
-fn is_sha256(value: &str) -> bool {
+pub(crate) fn is_sha256(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|hex| {
         hex.len() == 64
             && hex
@@ -419,7 +426,7 @@ fn is_sha256(value: &str) -> bool {
     })
 }
 
-fn is_media_type(value: &str) -> bool {
+pub(crate) fn is_media_type(value: &str) -> bool {
     let Some((kind, subtype)) = value.split_once('/') else {
         return false;
     };
@@ -546,6 +553,44 @@ mod tests {
         assert_eq!(
             err.diagnostic().map(|d| d.code.as_str()),
             Some("manifest.external_data.id.duplicate")
+        );
+    }
+
+    #[test]
+    fn parses_provenance_sidecar_path() {
+        let manifest = Manifest::from_slice(
+            br#"{
+                "format":"MCD",
+                "version":"0.1",
+                "profile":"MCD-Core",
+                "entrypoint":"content/main.md",
+                "provenance":"provenance/provenance.json"
+            }"#,
+        )
+        .expect("manifest parses");
+
+        assert_eq!(
+            manifest.provenance.as_deref(),
+            Some("provenance/provenance.json")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_provenance_sidecar_path() {
+        let err = Manifest::from_slice(
+            br#"{
+                "format":"MCD",
+                "version":"0.1",
+                "profile":"MCD-Core",
+                "entrypoint":"content/main.md",
+                "provenance":"../provenance.json"
+            }"#,
+        )
+        .expect_err("unsafe path should fail");
+
+        assert_eq!(
+            err.diagnostic().map(|d| d.code.as_str()),
+            Some("manifest.provenance.invalid")
         );
     }
 }

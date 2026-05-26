@@ -58,6 +58,7 @@ pub fn pdf_to_mcd_bytes(pdf: &[u8], options: PdfConversionOptions) -> crate::Res
             path: asset_path.clone(),
         }],
         external_data: Vec::new(),
+        provenance: None,
         layout: None::<LayoutManifestEntry>,
     };
 

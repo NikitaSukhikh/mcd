@@ -11,6 +11,7 @@ pub mod manifest;
 pub mod markdown;
 pub mod package;
 pub mod pdf;
+pub mod provenance;
 pub mod schema;
 pub mod table_view;
 pub mod tables;
