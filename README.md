@@ -87,6 +87,7 @@ it, replace `mcd` with `cargo run -p mcd-cli --`.
 A dedicated command list is available in [CLI_COMMANDS.md](CLI_COMMANDS.md).
 For language-specific install instructions, see [INSTALLATION.md](INSTALLATION.md).
 For agent-oriented instructions on creating a package from scratch, see [MCD_CREATION_GUIDE.md](MCD_CREATION_GUIDE.md).
+For a beginner Python quickstart for installing MCP and connecting it to a model harness, see [MCP_PYTHON_QUICKSTART.md](MCP_PYTHON_QUICKSTART.md).
 For MCP usage patterns and tool-selection guidance for AI agents, see [MCP_AGENT_GUIDE.md](MCP_AGENT_GUIDE.md).
 For publishing and downloadable binary releases, see [RELEASE.md](RELEASE.md).
 
