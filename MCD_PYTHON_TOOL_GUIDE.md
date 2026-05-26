@@ -199,6 +199,8 @@ Use SQL for:
 - `order by`
 - `limit`
 - derived expressions
+- schema discovery through `mcd_tables`, `mcd_columns`, `mcd_primary_keys`, `mcd_foreign_keys`, and `mcd_units`
+- SQLite table-valued PRAGMA queries such as `pragma_table_info('table_id')` and `pragma_foreign_key_list('table_id')`
 
 Examples:
 
@@ -233,6 +235,28 @@ doc.query("""
     order by c.stop_distance_100_0_m asc
     limit 5
 """).rows
+
+# Discover reliable joins from MCD foreign-key metadata.
+doc.query("""
+    select table_id, column_name, ref_table_id, ref_column_name
+    from mcd_foreign_keys
+""").rows
+
+# Inspect primary keys and semantic units.
+doc.query("""
+    select table_id, column_name, ordinal
+    from mcd_primary_keys
+    order by table_id, ordinal
+""").rows
+
+doc.query("""
+    select table_id, column_name, unit_code, unit_label
+    from mcd_units
+""").rows
+
+# SQLite table-valued PRAGMA introspection also works.
+doc.query("select name, pk from pragma_table_info('revenue') where pk > 0").rows
+doc.query("select [table], [from], [to] from pragma_foreign_key_list('orders')").rows
 ```
 
 Queries are read-only. Non-`select` statements are rejected:
@@ -345,6 +369,8 @@ For all package relationships:
 for relationship in doc.relationships():
     print(relationship["tableId"], relationship["columns"], relationship["references"])
 ```
+
+For SQL-first agents, prefer `mcd_primary_keys` and `mcd_foreign_keys` because relationship discovery and analysis can stay in one query runtime.
 
 ## External Data and Provenance
 

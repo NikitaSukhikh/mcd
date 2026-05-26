@@ -126,6 +126,13 @@ fn guide_json(package: Option<Value>) -> Value {
                 "group by",
                 "order by",
                 "limit",
+                "mcd_tables",
+                "mcd_columns",
+                "mcd_primary_keys",
+                "mcd_foreign_keys",
+                "mcd_units",
+                "pragma_table_info('table_id')",
+                "pragma_foreign_key_list('table_id')",
                 "count(*)",
                 "min(column)",
                 "max(column)",
@@ -137,6 +144,8 @@ fn guide_json(package: Option<Value>) -> Value {
             "guidance": [
                 "Use SQL for large tables instead of loading all rows.",
                 "Use table IDs from manifest.json as SQL table names.",
+                "Use mcd_primary_keys and mcd_foreign_keys to discover reliable joins.",
+                "Use mcd_units or mcd_columns unit fields to interpret measured numeric values.",
                 "Inspect schema columns before writing SQL against unfamiliar packages.",
                 "Return table names, column names, condition values, and result values in final answers."
             ]

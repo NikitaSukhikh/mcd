@@ -303,6 +303,38 @@ fn query_runs_read_only_sql_against_package_tables() {
     let rejected = run(mcd().arg("query").arg(&revenue).arg("delete from revenue"));
     assert!(!rejected.status.success());
     assert!(stderr(&rejected).contains("query must be a SELECT statement"));
+
+    let auto = example_package("auto-manufacturer-tech-spec");
+    let relationships = run(mcd()
+        .arg("query")
+        .arg(&auto)
+        .arg("select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys")
+        .arg("--format")
+        .arg("json"));
+    assert!(relationships.status.success(), "{}", stderr(&relationships));
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&relationships)).expect("relationships json");
+    assert_eq!(
+        json["rows"][0]["table_id"],
+        "chassis_brake_validation_specs"
+    );
+    assert_eq!(json["rows"][0]["column_name"], "vehicle_variant");
+    assert_eq!(
+        json["rows"][0]["ref_table_id"],
+        "vehicle_variant_configuration_specs"
+    );
+    assert_eq!(json["rows"][0]["ref_column_name"], "variant_id");
+
+    let pragma = run(mcd()
+        .arg("query")
+        .arg(&auto)
+        .arg("select name, pk from pragma_table_info('vehicle_variant_configuration_specs') where pk > 0")
+        .arg("--format")
+        .arg("json"));
+    assert!(pragma.status.success(), "{}", stderr(&pragma));
+    let json: serde_json::Value = serde_json::from_str(&stdout(&pragma)).expect("pragma json");
+    assert_eq!(json["rows"][0]["name"], "variant_id");
+    assert_eq!(json["rows"][0]["pk"], 1);
 }
 
 #[test]

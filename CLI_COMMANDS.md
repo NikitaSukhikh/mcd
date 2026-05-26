@@ -51,7 +51,7 @@ xdg-open revenue-report.html
 | `mcd convert-pdf <file> --output <output>` | Convert a PDF into a minimal MCD package. |
 | `mcd validate <file>` | Validate an MCD package. |
 | `mcd extract <file> <mode>` | Extract content from an MCD package. |
-| `mcd query <file> <sql>` | Query package tables with read-only SQL. |
+| `mcd query <file> <sql>` | Query package tables and schema metadata with read-only SQL. |
 | `mcd tools [file]` | Show Python, SQL, schema, relationship, unit, external-data, and provenance capabilities for agents. |
 | `mcd render <file> <target> --output <output>` | Render an MCD package. |
 | `mcd pack <directory> --output <output>` | Pack an unpacked directory into an MCD package. |
@@ -236,7 +236,7 @@ Arguments:
 | Argument | Purpose |
 | --- | --- |
 | `<file>` | Package file to query. |
-| `<sql>` | Read-only SQL query. Manifest table IDs are available as table names. |
+| `<sql>` | Read-only SQL query. Manifest table IDs and MCD metadata tables are available as table names. |
 
 Options:
 
@@ -251,6 +251,26 @@ Examples:
 mcd query report.mcd "select count(*) as rows from revenue"
 mcd query report.mcd "select quarter, revenue_gbp from revenue order by revenue_gbp desc limit 1"
 mcd query report.mcd "select max(revenue_gbp) as max_revenue from revenue" --format json
+mcd query report.mcd "select table_id, column_name from mcd_primary_keys" --format json
+mcd query report.mcd "select table_id, column_name, ref_table_id, ref_column_name from mcd_foreign_keys" --format json
+```
+
+The query runtime also exposes metadata tables:
+
+| Table | Purpose |
+| --- | --- |
+| `mcd_tables` | Manifest table IDs and data/schema paths. |
+| `mcd_columns` | Column names, types, labels, nullability, enum values, and unit fields. |
+| `mcd_primary_keys` | Primary key columns in key order. |
+| `mcd_foreign_keys` | Foreign key columns and referenced primary key columns. |
+| `mcd_units` | Semantic unit metadata for measured numeric columns. |
+
+SQLite key constraints are created for package tables, so table-valued PRAGMA
+queries also work:
+
+```bash
+mcd query report.mcd "select name, pk from pragma_table_info('revenue') where pk > 0"
+mcd query report.mcd "select [table], [from], [to] from pragma_foreign_key_list('orders')"
 ```
 
 ## `tools`

@@ -131,6 +131,34 @@ def test_sql_query_api() -> None:
         doc.query("delete from revenue")
 
 
+def test_sql_schema_metadata_tables() -> None:
+    doc = mcd.open(example("auto-manufacturer-tech-spec"))
+
+    relationships = doc.query(
+        """
+        select table_id, column_name, ref_table_id, ref_column_name
+        from mcd_foreign_keys
+        """
+    )
+    assert relationships.rows == [
+        {
+            "table_id": "chassis_brake_validation_specs",
+            "column_name": "vehicle_variant",
+            "ref_table_id": "vehicle_variant_configuration_specs",
+            "ref_column_name": "variant_id",
+        }
+    ]
+
+    primary_key = doc.query(
+        """
+        select name, pk
+        from pragma_table_info('vehicle_variant_configuration_specs')
+        where pk > 0
+        """
+    )
+    assert primary_key.rows == [{"name": "variant_id", "pk": 1}]
+
+
 def test_annotation_metadata_access(tmp_path: Path) -> None:
     package = tmp_path / "annotated.mcd"
     with zipfile.ZipFile(package, "w") as archive:
